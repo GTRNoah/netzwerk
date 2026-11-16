@@ -1,0 +1,16 @@
+{
+  "name": "Mein Netzwerk",
+  "short_name": "Netzwerk",
+  "description": "Kontakte und ihre Kontakte – lokal auf deinem Gerät",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0e18",
+  "theme_color": "#121826",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

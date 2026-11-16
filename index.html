@@ -1,0 +1,1256 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Keine Netzwerkverbindungen erlaubt: alle Daten bleiben lokal -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; worker-src 'self'; connect-src 'none'; form-action 'none'">
+<title>Mein Netzwerk</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Netzwerk">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#121826">
+<style>
+  :root {
+    --bg: #0a0e18;
+    --panel: #121826;
+    --panel-2: #182032;
+    --line: #253049;
+    --text: #e6ebf5;
+    --muted: #8b96ad;
+    --accent: #5eead4;
+    --d0: #fbbf24;
+    --d1: #5eead4;
+    --d2: #a78bfa;
+    --d3: #fb923c;
+    --cross: #f472b6;
+    --danger: #f87171;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; overflow: hidden; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .app { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: 52px 1fr; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0 8px 0 0; letter-spacing: .2px; }
+  header .stats { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  .status { color: var(--muted); font-size: 12px; margin-right: 4px; white-space: nowrap; }
+  .status.warn { color: var(--d3); }
+
+  .btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; white-space: nowrap; }
+  .btn:hover { border-color: #3a4868; }
+  .btn.primary { background: var(--accent); color: #062421; border-color: var(--accent); font-weight: 600; }
+  .btn.danger { color: var(--danger); }
+  .btn.small { padding: 3px 8px; font-size: 12px; }
+  select.btn { padding: 5px 8px; }
+
+  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .search { padding: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+  .search input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; outline: none; }
+  .search input:focus { border-color: var(--accent); }
+  .filter-label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 5px; display: flex; justify-content: space-between; }
+  .filter-label button { background: none; border: 0; color: var(--accent); font-size: 11px; padding: 0; text-transform: none; letter-spacing: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; max-height: 96px; overflow: auto; }
+  .chip { border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+  .chip .n { color: var(--muted); margin-left: 3px; }
+  .chip.on { background: var(--accent); color: #062421; border-color: var(--accent); }
+  .chip.on .n { color: #0d4a43; }
+  .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+  .chip.topic { border-color: #3d3566; }
+  .chip.topic.on { background: var(--d2); border-color: var(--d2); color: #1b1037; font-weight: 600; }
+  .chip.topic.on .n { color: #3b2a70; }
+  .none { color: var(--muted); font-size: 12px; }
+
+  .list-head { padding: 8px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .list-head b { color: var(--text); }
+  .linkbtn { background: none; border: 0; color: var(--accent); padding: 0 0 0 6px; font-size: 12px; }
+  .linkbtn:hover { text-decoration: underline; }
+  .list { overflow: auto; flex: 1; }
+  .item { display: grid; grid-template-columns: 10px 1fr; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #1a2233; cursor: pointer; }
+  .item:hover { background: var(--panel-2); }
+  .item.sel { background: #1c2740; }
+  .item .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
+  .item .name { font-weight: 600; }
+  .item .sub, .item .route { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .route { font-size: 11px; }
+  .item .tags { font-size: 11px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { padding: 24px 16px; color: var(--muted); text-align: center; }
+  .empty .btn { margin-top: 10px; }
+
+  main { display: flex; min-width: 0; min-height: 0; }
+  .stage { position: relative; flex: 1; min-width: 0; }
+  #graph { position: absolute; inset: 0; }
+  .legend { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 12px; font-size: 12px; color: var(--muted);
+    background: rgba(18,24,38,.8); padding: 6px 10px; border-radius: 8px; pointer-events: none; }
+  .legend { flex-wrap: wrap; row-gap: 4px; max-width: calc(100% - 28px); }
+  .legend span { white-space: nowrap; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .legend i.dash { width: 16px; height: 0; border-radius: 0; border-top: 2px dashed var(--cross); vertical-align: 3px; }
+  .hint { position: absolute; right: 14px; top: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  .viewtoggle { position: absolute; left: 14px; top: 10px; display: flex; background: rgba(18,24,38,.92);
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden; z-index: 2; }
+  .viewtoggle[hidden] { display: none; }
+  .viewtoggle button { background: none; border: 0; padding: 5px 11px; font-size: 12px; color: var(--muted); }
+  .viewtoggle button.on { background: var(--panel-2); color: var(--text); }
+  .scene-tooltip { font: 12px/1.4 "Segoe UI", sans-serif !important; }
+  .tip { background: rgba(18,24,38,.95); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; color: var(--text); }
+  .tip small { color: var(--muted); }
+
+  .panel { width: 0; overflow: hidden; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; flex-shrink: 0; }
+  .panel > * { min-width: 369px; }
+  main:has(.panel.open) .hint { display: none; }
+  .panel.open { width: 370px; }
+  .panel-head { padding: 16px 16px 10px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: flex-start; }
+  .panel-head h2 { margin: 0; font-size: 19px; }
+  .panel-head .sub { color: var(--muted); font-size: 13px; }
+  .panel-head .x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 4px; }
+  .panel-body { padding: 14px 16px; overflow: auto; overflow-x: hidden; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; }
+  .panel-foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; margin-top: 5px; }
+  .path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 13px; }
+  .path a { color: var(--text); text-decoration: none; background: var(--panel-2); padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+  .path a:hover { background: #22304c; }
+  .path b { background: var(--accent); color: #062421; padding: 2px 8px; border-radius: 6px; }
+  .path .arr { color: var(--muted); }
+  .path .arr.cross { color: var(--cross); }
+  .field .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 3px; }
+  .field .v { white-space: pre-wrap; word-break: break-word; }
+  .field a { color: var(--accent); }
+  .field .note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .stars { color: var(--d0); letter-spacing: 2px; }
+  .kids { display: flex; flex-wrap: wrap; gap: 5px; }
+  .copy { background: none; border: 0; color: var(--muted); font-size: 12px; padding: 0 4px; }
+  .copy:hover { color: var(--text); }
+  .chip.xlink { display: inline-flex; padding: 0; overflow: hidden; border-color: #5a2a48; }
+  .chip.xlink button { background: none; border: 0; padding: 2px 4px 2px 9px; font-size: 12px; }
+  .chip.xlink .rm { padding: 2px 8px 2px 4px; color: var(--muted); }
+  .chip.xlink .rm:hover { color: var(--danger); }
+  .addlink { width: 100%; margin-top: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; color: var(--muted); }
+
+  form.edit { display: grid; gap: 11px; }
+  form.edit label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+  form.edit input, form.edit select, form.edit textarea { width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; outline: none; color: var(--text); font-size: 14px; }
+  form.edit input:focus, form.edit select:focus, form.edit textarea:focus { border-color: var(--accent); }
+  form.edit textarea { min-height: 80px; resize: vertical; }
+  form.edit .hintline { font-size: 11px; color: var(--muted); }
+
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); opacity: 0;
+    background: var(--panel-2); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; transition: .2s; pointer-events: none; z-index: 10; }
+  .toast.show { opacity: 1; transform: translateX(-50%); }
+
+  .menu-btn, .tabs, .mobile-only { display: none; }
+  .menu-list { display: grid; gap: 8px; }
+  .menu-list .btn { text-align: left; padding: 10px 12px; }
+  .menu-list .btn small { display: block; color: var(--muted); font-size: 12px; white-space: normal; }
+  .steps { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  .steps li { margin-bottom: 4px; }
+
+  /* ---------- Handy ---------- */
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: 100vh; height: 100dvh; }
+    header { padding: 8px 12px; gap: 8px; min-height: 52px; }
+    header .stats, header .status, #layout, #btnFile, #btnExport, #btnImport, .hint { display: none; }
+    .menu-btn { display: inline-block; font-size: 18px; line-height: 1; padding: 6px 12px 8px; }
+    .mobile-only { display: revert; }
+    aside, main { grid-column: 1; grid-row: 2; min-height: 0; }
+    body.tab-graph aside, body.tab-list main { display: none; }
+    /* Detailansicht liegt im Netz-Bereich – auch im Tab „Kontakte“ anzeigen, das 3D-Bild aber nicht */
+    body.tab-list main:has(.panel.open) { display: flex; }
+    body.tab-list .stage { display: none; }
+    aside { border-right: 0; }
+    .tabs { display: flex; grid-column: 1; grid-row: 3; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+    .tabs button { flex: 1; background: none; border: 0; padding: 12px 0 10px; color: var(--muted); font-size: 14px; touch-action: manipulation; }
+    .tabs button.on { color: var(--accent); font-weight: 600; }
+    .panel { position: fixed; inset: 0; width: 100%; z-index: 20; border-left: 0; display: none;
+      padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    .panel.open { display: flex; width: 100%; }
+    .panel > * { min-width: 0; }
+    .legend { flex-wrap: wrap; gap: 4px 10px; left: 10px; right: 10px; bottom: 10px; font-size: 11px; }
+    .search input, form.edit input, form.edit select, form.edit textarea, .addlink { font-size: 16px; }
+    .item { padding: 11px 14px; }
+    .chip { padding: 4px 10px; font-size: 13px; }
+    .chips { max-height: 84px; }
+    button { touch-action: manipulation; }
+    .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
+  }
+</style>
+</head>
+<body class="tab-list">
+<div class="app">
+  <header>
+    <h1>Mein Netzwerk</h1>
+    <span class="stats" id="stats"></span>
+    <span class="spacer"></span>
+    <span class="status" id="status"></span>
+    <select class="btn" id="layout" title="Darstellung">
+      <option value="radialout">Radial (Ich in der Mitte)</option>
+      <option value="td">Baum (von oben)</option>
+      <option value="">Frei (Kräfte)</option>
+    </select>
+    <button class="btn" id="btnFile" title="Automatisch in eine Datei auf deinem Laptop mitspeichern">Speicherdatei…</button>
+    <button class="btn" id="btnExport" title="Backup als JSON-Datei herunterladen">Export</button>
+    <button class="btn" id="btnImport" title="Backup-Datei laden">Import</button>
+    <input type="file" id="importFile" accept=".json,application/json,text/plain" hidden>
+    <button class="btn menu-btn" id="btnMenu" aria-label="Menü">⋯</button>
+    <button class="btn primary" id="btnAdd">+ Kontakt</button>
+  </header>
+
+  <aside>
+    <div class="search">
+      <input id="q" type="search" placeholder="Suchen: Name, Beruf, Firma, wofür …" autocomplete="off">
+      <div>
+        <div class="filter-label">Themen <button id="addTopic">+ Thema</button></div>
+        <div class="chips" id="topicChips"></div>
+      </div>
+      <div>
+        <div class="filter-label">Grad</div>
+        <div class="chips" id="degreeChips"></div>
+      </div>
+      <div>
+        <div class="filter-label">Wofür nützlich <button id="clearFilters" hidden>Filter zurücksetzen</button></div>
+        <div class="chips" id="tagChips"></div>
+      </div>
+    </div>
+    <div class="list-head" id="listHead"></div>
+    <div class="list" id="list"></div>
+  </aside>
+
+  <main>
+    <div class="stage">
+    <div id="graph"></div>
+    <div class="viewtoggle" id="viewToggle" hidden>
+      <button data-view="pruned" title="Nur die Treffer und die Personen auf dem Weg dorthin">Nur Treffer-Baum</button>
+      <button data-view="all" title="Ganzes Netz, Rest abgedunkelt">Ganzes Netz</button>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--d0)"></i>Ich</span>
+      <span><i style="background:var(--d1)"></i>1. Grad</span>
+      <span><i style="background:var(--d2)"></i>2. Grad</span>
+      <span><i style="background:var(--d3)"></i>3.+ Grad</span>
+      <span><i class="dash"></i>Kennen sich auch</span>
+    </div>
+    <div class="hint">Ziehen = drehen · Rechtsklick ziehen = verschieben · Mausrad = zoomen</div>
+    </div>
+
+    <section class="panel" id="panel">
+      <div class="panel-head" id="panelHead"></div>
+      <div class="panel-body" id="panelBody"></div>
+      <div class="panel-foot" id="panelFoot"></div>
+    </section>
+  </main>
+  <nav class="tabs" id="tabs">
+    <button data-tab="list" class="on">Kontakte</button>
+    <button data-tab="graph">Netz</button>
+  </nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="lib/graph-libs.js"></script>
+<script>
+'use strict';
+
+/* ---------- Daten ---------- */
+const STORE_KEY = 'netzwerk.v1';
+const DEG_COLORS = ['#fbbf24', '#5eead4', '#a78bfa', '#fb923c'];
+const CROSS_COLOR = '#f472b6';
+const $ = sel => document.querySelector(sel);
+
+let data = loadLocal();
+let fileHandle = null;
+
+// u = Zeitpunkt der letzten Änderung eines Eintrags, deleted = gelöschte Einträge (für das Zusammenführen)
+function emptyData() { return { version: 3, meName: 'Ich', meNameU: 0, updatedAt: 0, people: [], links: [], topics: [], deleted: {} }; }
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return normalize(JSON.parse(raw));
+  } catch (e) { console.warn('Laden fehlgeschlagen', e); }
+  return emptyData();
+}
+
+function normalize(d) {
+  const out = emptyData();
+  if (!d || !Array.isArray(d.people)) throw new Error('Ungültige Datei');
+  out.meName = d.meName || 'Ich';
+  out.meNameU = +d.meNameU || 0;
+  out.updatedAt = d.updatedAt || 0;
+  if (d.deleted && typeof d.deleted === 'object') Object.entries(d.deleted).forEach(([k, t]) => { if (+t) out.deleted[k] = +t; });
+  out.people = d.people.filter(p => p && p.id && p.name).map(p => ({
+    id: String(p.id), name: String(p.name), via: p.via ? String(p.via) : 'me',
+    role: p.role || '', company: p.company || '',
+    tags: Array.isArray(p.tags) ? p.tags.map(String).filter(Boolean) : [],
+    phone: p.phone || '', email: p.email || '', reach: p.reach || '', location: p.location || '',
+    strength: Math.min(5, Math.max(1, +p.strength || 3)), lastContact: p.lastContact || '', notes: p.notes || '',
+    u: +p.u || 0
+  }));
+  const ids = new Set(out.people.map(p => p.id));
+  out.people.forEach(p => { if (p.via !== 'me' && !ids.has(p.via)) p.via = 'me'; });
+  // Zyklen auflösen
+  const byId = new Map(out.people.map(p => [p.id, p]));
+  out.people.forEach(p => {
+    const seen = new Set([p.id]); let cur = p.via;
+    while (cur !== 'me') { if (seen.has(cur)) { p.via = 'me'; break; } seen.add(cur); cur = byId.get(cur).via; }
+  });
+  // Querverbindungen: beide Personen müssen existieren, keine Doppelten
+  const seenLinks = new Set();
+  out.links = (Array.isArray(d.links) ? d.links : [])
+    .filter(l => l && ids.has(String(l.a)) && ids.has(String(l.b)) && String(l.a) !== String(l.b))
+    .map(l => ({ id: String(l.id || newId()), a: String(l.a), b: String(l.b), u: +l.u || 0 }))
+    .filter(l => { const k = edgeKey(l.a, l.b); if (seenLinks.has(k)) return false; seenLinks.add(k); return true; });
+  out.topics = (Array.isArray(d.topics) ? d.topics : []).filter(t => t && t.name).map(t => ({
+    id: String(t.id || newId()), name: String(t.name),
+    keywords: Array.isArray(t.keywords) ? t.keywords.map(String).filter(Boolean) : [],
+    u: +t.u || 0
+  }));
+  return out;
+}
+
+// Zwei Stände zusammenführen (z. B. Laptop + Handy): pro Eintrag gewinnt die neuere Änderung,
+// Gelöschtes bleibt gelöscht, außer es wurde danach noch einmal bearbeitet.
+function mergeData(a, b) {
+  const out = emptyData();
+  const del = { ...a.deleted };
+  Object.entries(b.deleted).forEach(([k, t]) => { if (!(del[k] >= t)) del[k] = t; });
+  const pick = (listA, listB, keyFn, tombFn) => {
+    const m = new Map();
+    [...listA, ...listB].forEach(x => { const k = keyFn(x), cur = m.get(k); if (!cur || x.u > cur.u) m.set(k, x); });
+    return [...m.values()].filter(x => !(del[tombFn(x)] >= x.u));
+  };
+  out.people = pick(a.people, b.people, p => p.id, p => p.id);
+  out.links = pick(a.links, b.links, l => edgeKey(l.a, l.b), l => 'L:' + edgeKey(l.a, l.b));
+  out.topics = pick(a.topics, b.topics, t => t.id, t => t.id);
+  const nameSrc = (b.meNameU || 0) > (a.meNameU || 0) ? b : a;
+  out.meName = nameSrc.meName; out.meNameU = nameSrc.meNameU || 0;
+  out.deleted = del;
+  out.updatedAt = Math.max(a.updatedAt || 0, b.updatedAt || 0);
+  return normalize(JSON.parse(JSON.stringify(out)));
+}
+
+let saveTimer = null;
+function save() {
+  data.updatedAt = Date.now();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+  catch (e) { toast('Speichern im Browser fehlgeschlagen!'); }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(writeFile, 400);
+  setStatus();
+}
+
+/* ---------- Abgeleitete Strukturen ---------- */
+let byId, kids, crossOf, depthOf, bfsParent;
+function index() {
+  byId = new Map(data.people.map(p => [p.id, p]));
+  kids = new Map();
+  data.people.forEach(p => { if (!kids.has(p.via)) kids.set(p.via, []); kids.get(p.via).push(p); });
+  kids.forEach(arr => arr.sort(byName));
+  crossOf = new Map();
+  data.links.forEach(l => [l.a, l.b].forEach(x => { if (!crossOf.has(x)) crossOf.set(x, []); crossOf.get(x).push(l); }));
+  // Kürzeste Wege von mir aus, über eingetragene Wege und Querverbindungen (Breitensuche).
+  // Eingetragene Wege werden zuerst probiert und gewinnen bei gleicher Länge.
+  depthOf = new Map([['me', 0]]); bfsParent = new Map();
+  const queue = ['me'];
+  for (let i = 0; i < queue.length; i++) {
+    const id = queue[i];
+    const nbs = (kids.get(id) || []).map(c => c.id);
+    if (id !== 'me') nbs.push(byId.get(id).via);
+    nbs.push(...partnersOf(id));
+    nbs.forEach(nb => { if (!depthOf.has(nb)) { depthOf.set(nb, depthOf.get(id) + 1); bfsParent.set(nb, id); queue.push(nb); } });
+  }
+}
+const byName = (a, b) => a.name.localeCompare(b.name, 'de');
+const nameOf = id => id === 'me' ? data.meName : (byId.get(id) || {}).name || '?';
+const firstName = id => nameOf(id).split(' ')[0];
+const colorOf = id => DEG_COLORS[Math.min(3, depthOf.get(id) || 0)];
+function edgeKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+const isTreeEdge = (a, b) => (byId.get(b) || {}).via === a || (byId.get(a) || {}).via === b;
+const partnersOf = id => (crossOf.get(id) || []).map(l => l.a === id ? l.b : l.a);
+// Eingetragener Weg (über wen ich die Person kennengelernt habe)
+function pathTo(id) { const p = []; let cur = id; while (cur && cur !== 'me') { p.unshift(cur); cur = byId.get(cur).via; } p.unshift('me'); return p; }
+// Kürzester Weg, auch über Querverbindungen
+function bestPath(id) { const p = [id]; while (p[0] !== 'me') p.unshift(bfsParent.get(p[0])); return p; }
+function descendants(id) { const s = new Set(); const walk = i => (kids.get(i) || []).forEach(c => { s.add(c.id); walk(c.id); }); walk(id); return s; }
+function treeOrder() { const out = []; const walk = (id, d) => (kids.get(id) || []).forEach(c => { out.push([c, d]); walk(c.id, d + 1); }); walk('me', 1); return out; }
+function allTags() {
+  const m = new Map();
+  data.people.forEach(p => p.tags.forEach(t => { const k = t.toLowerCase(); const e = m.get(k) || { label: t, n: 0 }; e.n++; m.set(k, e); }));
+  return [...m.entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0], 'de'));
+}
+
+/* ---------- Filter & Themen ---------- */
+const filter = { q: '', tags: new Set(), degrees: new Set(), topic: null };
+let pruned = true;   // bei aktivem Filter nur den Treffer-Baum zeigen
+const fold = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const filterActive = () => !!(filter.q.trim() || filter.tags.size || filter.degrees.size || filter.topic);
+const showPruned = () => filterActive() && pruned;
+const topicById = id => data.topics.find(t => t.id === id);
+const hayOf = p => fold([p.name, p.role, p.company, p.tags.join(' '), p.notes, p.location, p.reach, p.email, p.phone].join(' '));
+const parseList = s => [...new Set((s || '').split(',').map(x => x.trim()).filter(Boolean))];
+
+// Ein Kontakt passt zu einem Thema, wenn eines der Stichworte irgendwo bei ihm vorkommt
+function topicMatches(p, keywords) {
+  const hay = hayOf(p);
+  return keywords.some(k => { const f = fold(k).trim(); return f && hay.includes(f); });
+}
+
+function matches(p) {
+  const d = Math.min(3, depthOf.get(p.id));
+  if (filter.degrees.size && !filter.degrees.has(d)) return false;
+  if (filter.tags.size && !p.tags.some(t => filter.tags.has(t.toLowerCase()))) return false;
+  if (filter.topic) { const t = topicById(filter.topic); if (t && !topicMatches(p, t.keywords)) return false; }
+  const words = fold(filter.q).split(/\s+/).filter(Boolean);
+  if (words.length) {
+    const hay = hayOf(p);
+    if (!words.every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+
+let matchSet = new Set(), trailSet = new Set();
+function computeMatches() {
+  matchSet = new Set(); trailSet = new Set();
+  if (filter.topic && !topicById(filter.topic)) filter.topic = null;
+  if (!filterActive()) return;
+  data.people.forEach(p => { if (matches(p)) { matchSet.add(p.id); bestPath(p.id).forEach(i => trailSet.add(i)); } });
+}
+
+/* ---------- Auswahl ---------- */
+let selected = null;           // id oder null
+let panelMode = 'view';        // view | edit | new | topic | menu | import
+let newParent = 'me';
+let topicDraft = null;
+let pendingImport = null;      // { data, name } während des Import-Dialogs
+let sheetDismissed = false;
+const isMobile = () => matchMedia('(max-width: 760px)').matches;
+
+function setTab(tab) {
+  document.body.classList.toggle('tab-graph', tab === 'graph');
+  document.body.classList.toggle('tab-list', tab !== 'graph');
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  // Das 3D-Bild war versteckt (Größe 0) – Größe übernehmen und alles ins Bild holen
+  if (tab === 'graph') setTimeout(() => {
+    Graph.width(graphEl.clientWidth).height(graphEl.clientHeight);
+    if (!selected) { fitted = true; fitOnStop = true; fitView(); }
+  }, 30);
+}
+document.querySelector('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); };
+
+/* ---------- 3D-Graph ---------- */
+const nodeCache = new Map();
+const graphEl = $('#graph');
+const Graph = ForceGraph3D()(graphEl)
+  .backgroundColor('#0a0e18')
+  .showNavInfo(false)
+  .dagMode('radialout')
+  .dagLevelDistance(70)
+  .onDagError(() => {})
+  // Anordnung nach Rechenschritten beenden, nicht nach Zeit – so wird sie auch auf langsamen Geräten fertig
+  .cooldownTicks(250)
+  .cooldownTime(20000)
+  .nodeLabel(n => {
+    if (n.id === 'me') return '';
+    const p = byId.get(n.id); if (!p) return '';
+    const sub = [p.role, p.company].filter(Boolean).join(' · ');
+    const mids = bestPath(n.id).slice(1, -1).map(nameOf);
+    return `<div class="tip"><b>${esc(p.name)}</b>${sub ? `<br><small>${esc(sub)}</small>` : ''}${p.tags.length ? `<br><small>${esc(p.tags.join(', '))}</small>` : ''}${mids.length ? `<br><small>über ${esc(mids.join(' → '))}</small>` : ''}</div>`;
+  })
+  .nodeThreeObject(makeNodeObject)
+  .linkOpacity(0.55)
+  .linkDirectionalParticleWidth(2.2)
+  .linkDirectionalParticleSpeed(0.008)
+  .onNodeClick(n => select(n.id, true))
+  .onNodeHover(n => { graphEl.style.cursor = n ? 'pointer' : ''; })
+  .onBackgroundClick(() => closePanel());
+
+Graph.d3Force('charge').strength(-90);
+let fitted = false, fitOnStop = false, engineTicks = 0;
+Graph.onEngineTick(() => engineTicks++);
+Graph.onEngineStop(() => {
+  if (!graphEl.clientWidth) return; // 3D-Bild gerade versteckt (Handy, Tab „Kontakte“)
+  if (!fitted) { fitted = true; fitCamera(); }
+  else if (fitOnStop) { fitOnStop = false; fitView(); }
+});
+new ResizeObserver(() => Graph.width(graphEl.clientWidth).height(graphEl.clientHeight)).observe(graphEl);
+
+function makeNodeObject(n) {
+  const isMe = n.id === 'me';
+  const p = byId.get(n.id);
+  const r = isMe ? 7 : 2.6 + (p ? p.strength : 3) * 0.9;
+  const group = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: colorOf(n.id), transparent: true, opacity: 0.95, emissive: 0x000000 });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat);
+  group.add(mesh);
+  const label = new SpriteText(nameOf(n.id), isMe ? 6 : 4.4, '#e6ebf5');
+  label.fontFace = 'Segoe UI, system-ui, sans-serif';
+  label.fontWeight = isMe ? '700' : '500';
+  label.material.depthWrite = false;
+  label.position.y = r + 4;
+  group.add(label);
+  n.__mesh = mesh; n.__label = label;
+  applyNodeStyle(n);
+  return group;
+}
+
+function nodeState(id) {
+  if (id === selected) return 'sel';
+  if (!filterActive()) return 'on';
+  if (id === 'me' || matchSet.has(id)) return 'on';
+  return trailSet.has(id) ? 'trail' : 'off';
+}
+function applyNodeStyle(n) {
+  if (!n.__mesh) return;
+  const s = nodeState(n.id);
+  const op = { sel: 1, on: 0.95, trail: 0.45, off: 0.08 }[s];
+  n.__mesh.material.opacity = op;
+  n.__mesh.material.emissive.set(s === 'sel' ? colorOf(n.id) : '#000000');
+  n.__mesh.material.emissiveIntensity = 0.55;
+  n.__mesh.scale.setScalar(s === 'sel' ? 1.45 : 1);
+  n.__label.material.opacity = s === 'off' ? 0.06 : s === 'trail' ? 0.55 : 1;
+  n.__label.color = s === 'sel' ? '#ffffff' : '#e6ebf5';
+}
+
+let selEdges = new Set();
+function linkIds(l) { return [typeof l.source === 'object' ? l.source.id : l.source, typeof l.target === 'object' ? l.target.id : l.target]; }
+function onSelPath(l) { const [s, t] = linkIds(l); return selEdges.has(edgeKey(s, t)); }
+
+function refreshGraphStyle() {
+  const path = selected && (selected === 'me' || byId.has(selected)) ? bestPath(selected) : [];
+  selEdges = new Set(path.slice(1).map((id, i) => edgeKey(path[i], id)));
+  nodeCache.forEach(applyNodeStyle);
+  Graph
+    .linkColor(l => {
+      if (onSelPath(l)) return '#ffffff';
+      const [, t] = linkIds(l);
+      if (filterActive() && !trailSet.has(t)) return 'rgba(120,135,170,0.08)';
+      return l.cross ? CROSS_COLOR : colorOf(t);
+    })
+    .linkWidth(l => onSelPath(l) ? 1.6 : 0.6)
+    .linkDirectionalParticles(l => onSelPath(l) ? 3 : 0);
+  classifyCross();
+}
+
+// Sichtbare Knoten: alles, oder im Treffer-Baum nur Treffer + Personen auf dem Weg dorthin
+let visibleSet = new Set(), graphLinkKeys = new Set(), graphKey = '';
+function visibleIds() {
+  return showPruned()
+    ? ['me', ...data.people.filter(p => trailSet.has(p.id)).map(p => p.id)]
+    : ['me', ...data.people.map(p => p.id)];
+}
+
+function rebuildGraph() {
+  const ids = visibleIds();
+  const nodes = ids.map(id => {
+    let n = nodeCache.get(id);
+    if (!n) {
+      n = { id };
+      // Neue Kontakte neben der Person starten lassen, über die man sie kennt
+      const parent = id !== 'me' && nodeCache.get(byId.get(id).via);
+      if (parent && parent.x !== undefined) ['x', 'y', 'z'].forEach(k => n[k] = parent[k] + (Math.random() - 0.5) * 20);
+      nodeCache.set(id, n);
+    }
+    return n;
+  });
+  const alive = new Set(['me', ...data.people.map(p => p.id)]);
+  [...nodeCache.keys()].forEach(id => { if (!alive.has(id)) nodeCache.delete(id); });
+  // Im Treffer-Baum folgen die Linien den kürzesten Wegen (auch über Querverbindungen)
+  const links = showPruned()
+    ? ids.filter(id => id !== 'me').map(id => { const s = bfsParent.get(id); return { source: s, target: id, cross: !isTreeEdge(s, id) }; })
+    : data.people.map(p => ({ source: p.via, target: p.id, cross: false }));
+  visibleSet = new Set(ids);
+  graphLinkKeys = new Set(links.map(l => edgeKey(l.source, l.target)));
+  graphKey = ids.join(',') + '#' + showPruned();
+  Graph.graphData({ nodes, links });
+  Graph.nodeThreeObject(makeNodeObject); // Beschriftungen/Farben neu aufbauen
+  refreshGraphStyle();
+}
+
+/* Querverbindungen als gestrichelte Linien, die das Baum-Layout nicht verziehen */
+const crossLayers = {};
+[['norm', CROSS_COLOR, 0.65], ['dim', CROSS_COLOR, 0.07], ['hi', '#ffffff', 0.95]].forEach(([k, color, opacity]) => {
+  const mat = new THREE.LineDashedMaterial({ color, dashSize: 3, gapSize: 2.2, transparent: true, opacity, depthWrite: false });
+  const obj = new THREE.LineSegments(new THREE.BufferGeometry(), mat);
+  obj.frustumCulled = false; obj.visible = false;
+  Graph.scene().add(obj);
+  crossLayers[k] = obj;
+});
+let crossPairs = { norm: [], dim: [], hi: [] };
+function classifyCross() {
+  crossPairs = { norm: [], dim: [], hi: [] };
+  data.links.forEach(l => {
+    const k = edgeKey(l.a, l.b);
+    if (!visibleSet.has(l.a) || !visibleSet.has(l.b) || graphLinkKeys.has(k)) return;
+    const cls = selEdges.has(k) ? 'hi' : (filterActive() && !(trailSet.has(l.a) && trailSet.has(l.b))) ? 'dim' : 'norm';
+    crossPairs[cls].push([l.a, l.b]);
+  });
+}
+function drawCross() {
+  for (const k in crossLayers) {
+    const obj = crossLayers[k], pairs = crossPairs[k];
+    if (!pairs.length) { obj.visible = false; continue; }
+    let attr = obj.geometry.getAttribute('position');
+    if (!attr || attr.count !== pairs.length * 2) {
+      attr = new THREE.BufferAttribute(new Float32Array(pairs.length * 6), 3);
+      obj.geometry.setAttribute('position', attr);
+    }
+    pairs.forEach(([a, b], i) => {
+      const A = nodeCache.get(a), B = nodeCache.get(b);
+      if (A && B) attr.array.set([A.x || 0, A.y || 0, A.z || 0, B.x || 0, B.y || 0, B.z || 0], i * 6);
+    });
+    attr.needsUpdate = true;
+    obj.computeLineDistances();
+    obj.visible = true;
+  }
+  requestAnimationFrame(drawCross);
+}
+requestAnimationFrame(drawCross);
+
+// Warten, bis der Knoten nach einer Datenänderung an seinem Platz ist
+function flyWhenSettled(id, tries = 0, last = null, startTick = engineTicks) {
+  const n = nodeCache.get(id);
+  const pos = n && n.x !== undefined ? [n.x, n.y, n.z] : null;
+  const moved = !pos || !last || Math.hypot(pos[0] - last[0], pos[1] - last[1], pos[2] - last[2]) > 1.5;
+  if ((moved || engineTicks - startTick < 40) && tries < 40) return setTimeout(() => flyWhenSettled(id, tries + 1, pos, startTick), 150);
+  flyTo(id);
+}
+
+function flyTo(id) {
+  const n = nodeCache.get(id); if (!n || n.x === undefined || !visibleSet.has(id)) return;
+  // Blickrichtung beibehalten, nur auf den Kontakt zufliegen
+  const cam = Graph.camera().position, tgt = Graph.controls().target;
+  const dir = new THREE.Vector3(tgt.x - cam.x, tgt.y - cam.y, tgt.z - cam.z);
+  if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+  dir.normalize().multiplyScalar(170);
+  Graph.cameraPosition({ x: n.x - dir.x, y: n.y - dir.y, z: n.z - dir.z }, { x: n.x, y: n.y, z: n.z }, 900);
+}
+
+let fitTimer;
+function scheduleFit(waitForLayout) {
+  clearTimeout(fitTimer);
+  fitOnStop = waitForLayout;
+  fitTimer = setTimeout(fitView, waitForLayout ? 900 : 450);
+}
+function fitView() {
+  if (selected || !fitted || !graphEl.clientWidth) return;
+  const active = filterActive();
+  if (active && !matchSet.size) return;
+  fitCamera(n => !active || showPruned() || n.id === 'me' || matchSet.has(n.id));
+}
+
+// Alles ins Bild holen: von der Seite schauen, auf der das Netz am flachsten ist (sonst sieht man
+// einen Baum, der zufällig in Blickrichtung gewachsen ist, nur als Punkt), und das Bild so drehen,
+// dass die längste Ausdehnung zur Bildschirmform passt (Handy hochkant, Laptop quer).
+function fitCamera(nodeFilter = () => true, ms = 700) {
+  const ns = Graph.graphData().nodes.filter(n => n.x !== undefined && nodeFilter(n));
+  if (!ns.length || !graphEl.clientWidth) return;
+  const pts = ns.map(n => new THREE.Vector3(n.x, n.y, n.z));
+  const box = new THREE.Box3().setFromPoints(pts), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const ext = [size.x, size.y, size.z], axis = ext.indexOf(Math.min(...ext));
+  const view = new THREE.Vector3().setComponent(axis, 1);
+  const [ia, ib] = [0, 1, 2].filter(i => i !== axis);
+  const u = new THREE.Vector3().setComponent(ia, 1), v = new THREE.Vector3().setComponent(ib, 1);
+  // Hauptrichtung in der Bildebene (2D-Hauptkomponente)
+  let su = 0, sv = 0, suv = 0;
+  pts.forEach(p => { const a = p.getComponent(ia) - c.getComponent(ia), b = p.getComponent(ib) - c.getComponent(ib); su += a * a; sv += b * b; suv += a * b; });
+  const th = 0.5 * Math.atan2(2 * suv, su - sv);
+  const main = u.clone().multiplyScalar(Math.cos(th)).addScaledVector(v, Math.sin(th));
+  const side = u.clone().multiplyScalar(-Math.sin(th)).addScaledVector(v, Math.cos(th));
+  const cam = Graph.camera();
+  const up = cam.aspect < 1 ? main : side, across = cam.aspect < 1 ? side : main;
+  if (up.y < 0 || (up.y === 0 && up.z < 0)) up.negate();
+  const span = dir => { let lo = Infinity, hi = -Infinity; pts.forEach(p => { const d = p.clone().sub(c).dot(dir); lo = Math.min(lo, d); hi = Math.max(hi, d); }); return hi - lo + 40; };
+  const vfov = cam.fov * Math.PI / 180, hfov = 2 * Math.atan(Math.tan(vfov / 2) * cam.aspect);
+  const dist = Math.max(120, Math.max(span(across) / 2 / Math.tan(hfov / 2), span(up) / 2 / Math.tan(vfov / 2)) * 1.22 + ext[axis] / 2);
+  cam.up.copy(up);
+  const pos = c.clone().addScaledVector(view, dist);
+  Graph.cameraPosition({ x: pos.x, y: pos.y, z: pos.z }, { x: c.x, y: c.y, z: c.z }, ms);
+}
+
+/* ---------- Sidebar ---------- */
+function renderSidebar() {
+  const direct = (kids.get('me') || []).length;
+  $('#stats').textContent = data.people.length
+    ? `${data.people.length} Kontakte · ${direct} direkt · ${data.links.length} Querverbindungen`
+    : '';
+
+  $('#topicChips').innerHTML = data.topics.length
+    ? data.topics.map(t => {
+        const n = data.people.filter(p => topicMatches(p, t.keywords)).length;
+        return `<button class="chip topic ${filter.topic === t.id ? 'on' : ''}" data-topic="${esc(t.id)}" title="${esc(t.keywords.join(', '))}">${esc(t.name)}<span class="n">${n}</span></button>`;
+      }).join('')
+    : '<span class="none">Noch keine Themen – z. B. „Immobilien“ anlegen</span>';
+
+  const degCounts = [0, 0, 0, 0];
+  data.people.forEach(p => degCounts[Math.min(3, depthOf.get(p.id))]++);
+  $('#degreeChips').innerHTML = [1, 2, 3].map(d =>
+    `<button class="chip ${filter.degrees.has(d) ? 'on' : ''}" data-deg="${d}"><span class="dot" style="background:${DEG_COLORS[d]}"></span>${d === 3 ? '3.+' : d + '.'} Grad<span class="n">${degCounts[d]}</span></button>`
+  ).join('');
+
+  const tags = allTags();
+  $('#tagChips').innerHTML = tags.length
+    ? tags.map(([k, e]) => `<button class="chip ${filter.tags.has(k) ? 'on' : ''}" data-tag="${esc(k)}">${esc(e.label)}<span class="n">${e.n}</span></button>`).join('')
+    : '<span class="none">Noch keine Stichworte</span>';
+  $('#clearFilters').hidden = !filterActive();
+
+  const vt = $('#viewToggle');
+  vt.hidden = !filterActive();
+  vt.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.view === 'pruned') === pruned));
+
+  const list = (filterActive() ? data.people.filter(p => matchSet.has(p.id)) : data.people.slice())
+    .sort((a, b) => depthOf.get(a.id) - depthOf.get(b.id) || byName(a, b));
+  const topic = filter.topic && topicById(filter.topic);
+  $('#listHead').innerHTML = topic
+    ? `Thema <b>${esc(topic.name)}</b>: ${list.length} Kontakt${list.length === 1 ? '' : 'e'} <button class="linkbtn" id="editTopic">bearbeiten</button>`
+    : filterActive()
+      ? `${list.length} von ${data.people.length} gefunden` + (filter.tags.size || filter.q.trim() ? ' <button class="linkbtn" id="saveTopic">als Thema speichern</button>' : '')
+      : `Alle Kontakte (${data.people.length})`;
+  if (filterActive() && list.length) $('#listHead').insertAdjacentHTML('beforeend', ' <button class="linkbtn mobile-only" id="showTree">als Baum zeigen</button>');
+  if ($('#showTree')) $('#showTree').onclick = () => setTab('graph');
+  if ($('#editTopic')) $('#editTopic').onclick = () => openTopic(filter.topic);
+  if ($('#saveTopic')) $('#saveTopic').onclick = () => {
+    const labels = new Map(allTags());
+    const kws = [...[...filter.tags].map(k => (labels.get(k) || { label: k }).label), ...filter.q.trim().split(/\s+/).filter(Boolean)];
+    openTopic(null, { name: kws[0] || '', keywords: kws });
+  };
+
+  if (!data.people.length) {
+    $('#list').innerHTML = `<div class="empty">Noch keine Kontakte.<br>Leg mit „+ Kontakt“ los<br>
+      <button class="btn" id="btnDemo">oder Beispieldaten ansehen</button></div>`;
+    $('#btnDemo').onclick = loadDemo;
+    return;
+  }
+  $('#list').innerHTML = list.length ? list.map(p => {
+    const sub = [p.role, p.company].filter(Boolean).join(' · ');
+    const mids = bestPath(p.id).slice(1, -1).map(nameOf);
+    return `<div class="item ${p.id === selected ? 'sel' : ''}" data-id="${esc(p.id)}">
+      <span class="dot" style="background:${colorOf(p.id)}"></span>
+      <div style="min-width:0"><div class="name">${esc(p.name)}</div>
+      ${sub ? `<div class="sub">${esc(sub)}</div>` : ''}
+      ${p.tags.length ? `<div class="tags">${esc(p.tags.join(' · '))}</div>` : ''}
+      ${mids.length ? `<div class="route">über ${esc(mids.join(' → '))}</div>` : ''}</div></div>`;
+  }).join('') : '<div class="empty">Niemand passt zu diesen Filtern.</div>';
+}
+
+$('#topicChips').onclick = e => {
+  const b = e.target.closest('[data-topic]'); if (!b) return;
+  filter.topic = filter.topic === b.dataset.topic ? null : b.dataset.topic;
+  if (filter.topic) { pruned = true; selected = null; renderPanel(); }
+  update();
+};
+$('#addTopic').onclick = () => openTopic(null);
+$('#degreeChips').onclick = e => { const b = e.target.closest('[data-deg]'); if (!b) return; toggle(filter.degrees, +b.dataset.deg); update(); };
+$('#tagChips').onclick = e => { const b = e.target.closest('[data-tag]'); if (!b) return; toggle(filter.tags, b.dataset.tag); update(); };
+$('#clearFilters').onclick = () => { filter.q = ''; $('#q').value = ''; filter.tags.clear(); filter.degrees.clear(); filter.topic = null; update(); };
+$('#viewToggle').onclick = e => { const b = e.target.closest('[data-view]'); if (!b) return; pruned = b.dataset.view === 'pruned'; update(); };
+$('#q').oninput = e => { filter.q = e.target.value; update(); };
+$('#q').onkeydown = e => { if (e.key === 'Enter') { const first = $('#list .item'); if (first) select(first.dataset.id, true); } };
+$('#list').onclick = e => { const it = e.target.closest('.item'); if (it) select(it.dataset.id, true); };
+const toggle = (set, v) => set.has(v) ? set.delete(v) : set.add(v);
+
+function update() {
+  computeMatches();
+  if (visibleIds().join(',') + '#' + showPruned() !== graphKey) { rebuildGraph(); scheduleFit(true); }
+  else { refreshGraphStyle(); scheduleFit(false); }
+  renderSidebar();
+}
+function fullUpdate() { index(); computeMatches(); rebuildGraph(); renderSidebar(); renderPanel(); }
+
+/* ---------- Detail-Panel ---------- */
+function select(id, fly) {
+  selected = id; panelMode = 'view'; sheetDismissed = false;
+  renderPanel(); renderSidebar(); refreshGraphStyle();
+  if (fly) {
+    if (!visibleSet.has(id) && !isMobile()) toast('Nicht im aktuellen Treffer-Baum – „Ganzes Netz“ zeigt alle');
+    flyTo(id);
+  }
+  const it = $(`#list .item[data-id="${CSS.escape(id)}"]`); if (it) it.scrollIntoView({ block: 'nearest' });
+}
+function closePanel() { selected = null; panelMode = 'view'; renderPanel(); renderSidebar(); refreshGraphStyle(); }
+
+function pathHtml(path) {
+  return `<div class="path">${path.map((id, i) => {
+    const node = i === path.length - 1 ? `<b>${esc(nameOf(id))}</b>` : `<a data-go="${esc(id)}">${esc(nameOf(id))}</a>`;
+    if (i === 0) return node;
+    const cross = !isTreeEdge(path[i - 1], id);
+    return `<span class="arr${cross ? ' cross' : ''}" title="${cross ? 'Kennen sich (Querverbindung)' : ''}">${cross ? '↔' : '→'}</span>${node}`;
+  }).join('')}</div>`;
+}
+
+function renderPanel() {
+  const panel = $('#panel');
+  if (panelMode === 'new') return renderForm(null);
+  if (panelMode === 'topic') return renderTopicForm();
+  if (panelMode === 'menu') return renderMenu();
+  if (panelMode === 'import') return renderImport();
+  if (!selected || (selected !== 'me' && !byId.has(selected))) { selected = null; panel.classList.remove('open'); return; }
+  // Handy: Detailansicht wurde für „Im Netz zeigen“ weggeklappt, Auswahl bleibt aber markiert
+  if (sheetDismissed && panelMode === 'view' && isMobile()) { panel.classList.remove('open'); return; }
+  if (panelMode === 'edit') return renderForm(selected);
+  panel.classList.add('open');
+
+  const isMe = selected === 'me';
+  const p = isMe ? { name: data.meName, tags: [] } : byId.get(selected);
+  const d = depthOf.get(selected);
+  const sub = [p.role, p.company].filter(Boolean).join(' · ');
+  $('#panelHead').innerHTML = `<div><h2>${esc(p.name)}</h2>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}
+    ${isMe ? '' : `<span class="badge" style="color:${colorOf(selected)}">${d}. Grad</span>`}</div>
+    <button class="x" title="Schließen (Esc)">×</button>`;
+  $('#panelHead .x').onclick = closePanel;
+
+  const children = kids.get(selected) || [];
+  let html = '';
+  if (!isMe) {
+    const best = bestPath(selected), tree = pathTo(selected);
+    const differs = best.join() !== tree.join();
+    html += `<div class="field"><div class="k">So kommst du hin</div>${pathHtml(best)}
+      ${differs ? `<div class="note">Kürzer über eine Querverbindung</div>` : ''}</div>`;
+    if (differs) html += `<div class="field"><div class="k">Eingetragen über</div>${pathHtml(tree)}</div>`;
+    if (p.tags.length) html += `<div class="field"><div class="k">Wofür nützlich</div><div class="chips">${p.tags.map(t => `<button class="chip" data-tagjump="${esc(t.toLowerCase())}">${esc(t)}</button>`).join('')}</div></div>`;
+    const phone = p.phone ? `<a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}">${esc(p.phone)}</a> <button class="copy" data-copy="${esc(p.phone)}">kopieren</button>` : '';
+    const mail = p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a> <button class="copy" data-copy="${esc(p.email)}">kopieren</button>` : '';
+    html += fieldRow('Telefon', phone, 'E-Mail', mail);
+    html += field('Erreichbarkeit', esc(p.reach));
+    html += fieldRow('Ort', esc(p.location), 'Beziehung', `<span class="stars" title="${p.strength} von 5">${'★'.repeat(p.strength)}${'☆'.repeat(5 - p.strength)}</span>`);
+    html += field('Letzter Kontakt', p.lastContact ? formatDate(p.lastContact) : '');
+    html += field('Notizen', esc(p.notes));
+  }
+  html += `<div class="field"><div class="k">${isMe ? 'Direkte Kontakte' : `Über ${esc(firstName(selected))} kennst du`} (${children.length})</div>${children.length
+    ? `<div class="kids">${children.map(c => `<button class="chip" data-go="${esc(c.id)}"><span class="dot" style="background:${colorOf(c.id)}"></span>${esc(c.name)}</button>`).join('')}</div>`
+    : `<div class="v" style="color:var(--muted)">Noch niemand eingetragen.</div>`}</div>`;
+  if (!isMe) {
+    const partners = partnersOf(selected).map(id => byId.get(id)).sort(byName);
+    const taken = new Set([selected, p.via, ...partnersOf(selected), ...children.map(c => c.id)]);
+    const options = data.people.filter(c => !taken.has(c.id)).sort(byName);
+    html += `<div class="field"><div class="k">Kennt außerdem (${partners.length})</div>
+      ${partners.length ? `<div class="kids">${partners.map(c => `<span class="chip xlink"><button data-go="${esc(c.id)}"><span class="dot" style="background:${colorOf(c.id)}"></span>${esc(c.name)}</button><button class="rm" data-unlink="${esc(c.id)}" title="Verbindung entfernen">×</button></span>`).join('')}</div>` : ''}
+      ${options.length ? `<select class="addlink" id="linkSel"><option value="">+ Wen kennt ${esc(firstName(selected))} noch aus deinem Netz?</option>${options.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>` : ''}
+    </div>`;
+  }
+  $('#panelBody').innerHTML = html;
+  if ($('#linkSel')) $('#linkSel').onchange = e => addLink(selected, e.target.value);
+
+  $('#panelFoot').innerHTML = `<button class="btn primary" id="pAdd">+ Kontakt über ${esc(isMe ? 'mich' : firstName(selected))}</button>
+    <button class="btn" id="pEdit">${isMe ? 'Namen ändern' : 'Bearbeiten'}</button>
+    <button class="btn mobile-only" id="pShow">Im Netz zeigen</button>
+    ${isMe ? '' : '<button class="btn danger" id="pDel">Löschen</button>'}`;
+  $('#pAdd').onclick = () => openNew(selected);
+  $('#pShow').onclick = () => {
+    sheetDismissed = true; panel.classList.remove('open'); setTab('graph');
+    if (!visibleSet.has(selected)) toast('Nicht im aktuellen Treffer-Baum – „Ganzes Netz“ zeigt alle');
+    setTimeout(() => flyTo(selected), 50);
+  };
+  $('#pEdit').onclick = () => { panelMode = 'edit'; renderPanel(); };
+  if (!isMe) $('#pDel').onclick = () => removePerson(selected);
+}
+
+function field(k, v) { return v ? `<div class="field"><div class="k">${k}</div><div class="v">${v}</div></div>` : ''; }
+function fieldRow(k1, v1, k2, v2) { const a = field(k1, v1), b = field(k2, v2); return a && b ? `<div class="row2">${a}${b}</div>` : a + b; }
+
+$('#panelBody').addEventListener('click', e => {
+  const un = e.target.closest('[data-unlink]'); if (un) return removeLink(selected, un.dataset.unlink);
+  const go = e.target.closest('[data-go]'); if (go) return select(go.dataset.go, true);
+  const tj = e.target.closest('[data-tagjump]');
+  if (tj) { filter.tags = new Set([tj.dataset.tagjump]); filter.topic = null; update(); return; }
+  const kw = e.target.closest('[data-addkw]');
+  if (kw) {
+    const input = $('#f [name=keywords]'), list = parseList(input.value);
+    if (!list.some(x => fold(x) === fold(kw.dataset.addkw))) list.push(kw.dataset.addkw);
+    input.value = list.join(', '); updateTopicPreview(); return;
+  }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) navigator.clipboard.writeText(cp.dataset.copy).then(() => toast('Kopiert'), () => toast('Kopieren nicht möglich'));
+});
+
+/* ---------- Querverbindungen ---------- */
+function addLink(a, b) {
+  if (!b || a === b || partnersOf(a).includes(b)) return;
+  data.links.push({ id: newId(), a, b, u: Date.now() });
+  save(); fullUpdate(); toast(`${nameOf(a)} ↔ ${nameOf(b)} verbunden`);
+}
+function removeLink(a, b) {
+  const k = edgeKey(a, b);
+  data.links = data.links.filter(l => edgeKey(l.a, l.b) !== k);
+  data.deleted['L:' + k] = Date.now();
+  save(); fullUpdate(); toast('Verbindung entfernt');
+}
+
+/* ---------- Kontakt-Formular ---------- */
+function openNew(parent) { panelMode = 'new'; newParent = parent || 'me'; renderPanel(); }
+
+function renderForm(id) {
+  $('#panel').classList.add('open');
+  const isMe = id === 'me';
+  const p = id && !isMe ? byId.get(id) : null;
+  const v = k => esc(p ? (Array.isArray(p[k]) ? p[k].join(', ') : p[k]) : '');
+  $('#panelHead').innerHTML = `<div><h2>${isMe ? 'Dein Name' : p ? 'Bearbeiten' : 'Neuer Kontakt'}</h2></div><button class="x" title="Abbrechen">×</button>`;
+  $('#panelHead .x').onclick = cancelForm;
+
+  if (isMe) {
+    $('#panelBody').innerHTML = `<form class="edit" id="f"><label>Name in der Mitte des Netzes<input name="name" required value="${esc(data.meName)}"></label></form>`;
+  } else {
+    const blocked = p ? descendants(p.id) : new Set();
+    if (p) blocked.add(p.id);
+    const parent = p ? p.via : newParent;
+    const opts = [`<option value="me">${esc(data.meName)} (direkt)</option>`]
+      .concat(treeOrder().filter(([c]) => !blocked.has(c.id))
+        .map(([c, d]) => `<option value="${esc(c.id)}" ${c.id === parent ? 'selected' : ''}>${'  '.repeat(d)}${esc(c.name)}</option>`));
+    const tagList = allTags().map(([, e]) => `<option value="${esc(e.label)}">`).join('');
+    $('#panelBody').innerHTML = `<form class="edit" id="f" autocomplete="off">
+      <label>Name *<input name="name" required value="${v('name')}"></label>
+      <label>Kenne ich über<select name="via">${opts.join('')}</select></label>
+      <div class="row2"><label>Beruf / Rolle<input name="role" value="${v('role')}"></label>
+      <label>Firma<input name="company" value="${v('company')}"></label></div>
+      <label>Wofür nützlich<input name="tags" list="tagSuggest" value="${v('tags')}" placeholder="z. B. Steuern, Webdesign, Umzug">
+        <span class="hintline">Mehrere Stichworte mit Komma trennen</span></label>
+      <datalist id="tagSuggest">${tagList}</datalist>
+      <div class="row2"><label>Telefon<input name="phone" type="tel" value="${v('phone')}"></label>
+      <label>E-Mail<input name="email" type="email" value="${v('email')}"></label></div>
+      <label>Erreichbarkeit<input name="reach" value="${v('reach')}" placeholder="z. B. Mo–Fr ab 17 Uhr, lieber WhatsApp"></label>
+      <div class="row2"><label>Ort<input name="location" value="${v('location')}"></label>
+      <label>Beziehung<select name="strength">${[1, 2, 3, 4, 5].map(s =>
+        `<option value="${s}" ${(p ? p.strength : 3) === s ? 'selected' : ''}>${'★'.repeat(s)} ${['flüchtig', 'locker', 'gut', 'eng', 'sehr eng'][s - 1]}</option>`).join('')}</select></label></div>
+      <label>Letzter Kontakt<input name="lastContact" type="date" value="${v('lastContact')}"></label>
+      <label>Notizen<textarea name="notes">${v('notes')}</textarea></label>
+    </form>`;
+  }
+  $('#panelFoot').innerHTML = `<button class="btn primary" id="fSave">Speichern</button><button class="btn" id="fCancel">Abbrechen</button>`;
+  $('#fCancel').onclick = cancelForm;
+  $('#fSave').onclick = () => $('#f').requestSubmit();
+  $('#f').onsubmit = e => { e.preventDefault(); submitForm(id, new FormData(e.target)); };
+  setTimeout(() => $('#f [name=name]').focus(), 50);
+}
+
+function cancelForm() { panelMode = 'view'; pendingImport = null; renderPanel(); }
+
+function submitForm(id, fd) {
+  const name = (fd.get('name') || '').trim(); if (!name) return;
+  if (id === 'me') { data.meName = name; data.meNameU = Date.now(); panelMode = 'view'; save(); fullUpdate(); return; }
+  const rec = {
+    name, via: fd.get('via') || 'me', role: fd.get('role').trim(), company: fd.get('company').trim(),
+    tags: parseList(fd.get('tags')),
+    phone: fd.get('phone').trim(), email: fd.get('email').trim(), reach: fd.get('reach').trim(),
+    location: fd.get('location').trim(), strength: +fd.get('strength') || 3,
+    lastContact: fd.get('lastContact'), notes: fd.get('notes').trim(), u: Date.now()
+  };
+  let targetId = id;
+  if (id) Object.assign(byId.get(id), rec);
+  else { targetId = newId(); data.people.push({ id: targetId, ...rec }); }
+  // Eine Querverbindung, die jetzt der eingetragene Weg ist, wird überflüssig
+  const dup = edgeKey(targetId, rec.via);
+  if (data.links.some(l => edgeKey(l.a, l.b) === dup)) {
+    data.links = data.links.filter(l => edgeKey(l.a, l.b) !== dup);
+    data.deleted['L:' + dup] = Date.now();
+  }
+  panelMode = 'view'; selected = targetId;
+  save(); fullUpdate();
+  toast(id ? 'Gespeichert' : `${name} hinzugefügt`);
+  flyWhenSettled(targetId);
+}
+
+function removePerson(id) {
+  const p = byId.get(id); const n = (kids.get(id) || []).length;
+  const msg = `${p.name} wirklich löschen?` + (n ? `\n\nDie ${n} Kontakt(e), die du über ${p.name} kennst, hängen danach an ${nameOf(p.via)}.` : '');
+  if (!confirm(msg)) return;
+  const now = Date.now();
+  data.people.forEach(c => { if (c.via === id) { c.via = p.via; c.u = now; } });
+  data.people = data.people.filter(c => c.id !== id);
+  data.links = data.links.filter(l => l.a !== id && l.b !== id);
+  data.deleted[id] = now;
+  selected = p.via === 'me' ? null : p.via;
+  save(); fullUpdate(); toast(`${p.name} gelöscht`);
+}
+
+/* ---------- Themen-Formular ---------- */
+function openTopic(id, preset) {
+  const t = id && topicById(id);
+  topicDraft = t
+    ? { id: t.id, name: t.name, keywords: t.keywords.join(', ') }
+    : { id: null, name: (preset && preset.name) || '', keywords: ((preset && preset.keywords) || []).join(', ') };
+  panelMode = 'topic'; renderPanel();
+}
+
+function renderTopicForm() {
+  $('#panel').classList.add('open');
+  const isNew = !topicDraft.id;
+  $('#panelHead').innerHTML = `<div><h2>${isNew ? 'Neues Thema' : 'Thema bearbeiten'}</h2>
+    <div class="sub">Zeigt einen eigenen kleinen Baum mit allen passenden Kontakten und den Wegen zu ihnen.</div></div>
+    <button class="x" title="Abbrechen">×</button>`;
+  $('#panelHead .x').onclick = cancelForm;
+  const tags = allTags();
+  $('#panelBody').innerHTML = `<form class="edit" id="f" autocomplete="off">
+      <label>Name *<input name="name" required value="${esc(topicDraft.name)}" placeholder="z. B. Immobilien"></label>
+      <label>Stichworte *<input name="keywords" value="${esc(topicDraft.keywords)}" placeholder="z. B. Immobilien, Wohnung, Makler, Notar">
+        <span class="hintline">Ein Kontakt gehört dazu, wenn eines der Stichworte bei ihm vorkommt – in „Wofür nützlich“, Beruf, Firma oder Notizen. Mit Komma trennen.</span></label>
+    </form>
+    ${tags.length ? `<div class="field"><div class="k">Vorhandene Stichworte – klicken zum Hinzufügen</div><div class="chips">${tags.map(([, e]) => `<button class="chip" data-addkw="${esc(e.label)}">${esc(e.label)}</button>`).join('')}</div></div>` : ''}
+    <div class="field" id="topicPreview"></div>`;
+  $('#panelFoot').innerHTML = `<button class="btn primary" id="fSave">Speichern</button><button class="btn" id="fCancel">Abbrechen</button>
+    ${isNew ? '' : '<button class="btn danger" id="fDel">Thema löschen</button>'}`;
+  $('#fCancel').onclick = cancelForm;
+  $('#fSave').onclick = () => $('#f').requestSubmit();
+  if (!isNew) $('#fDel').onclick = deleteTopic;
+  $('#f').oninput = updateTopicPreview;
+  $('#f').onsubmit = e => { e.preventDefault(); submitTopic(new FormData(e.target)); };
+  updateTopicPreview();
+  setTimeout(() => $('#f [name=name]').focus(), 50);
+}
+
+function updateTopicPreview() {
+  const kws = parseList($('#f [name=keywords]').value);
+  const hits = kws.length ? data.people.filter(p => topicMatches(p, kws)).sort(byName) : [];
+  $('#topicPreview').innerHTML = !kws.length ? ''
+    : hits.length
+      ? `<div class="k">Passt auf ${hits.length} Kontakt${hits.length === 1 ? '' : 'e'}</div><div class="kids">${hits.map(p => `<span class="chip"><span class="dot" style="background:${colorOf(p.id)}"></span>${esc(p.name)}</span>`).join('')}</div>`
+      : `<div class="v" style="color:var(--muted)">Noch kein Kontakt passt.</div>`;
+}
+
+function submitTopic(fd) {
+  const name = (fd.get('name') || '').trim(), keywords = parseList(fd.get('keywords'));
+  if (!name) return;
+  if (!keywords.length) { toast('Bitte mindestens ein Stichwort angeben'); return; }
+  let t = topicDraft.id && topicById(topicDraft.id);
+  if (t) Object.assign(t, { name, keywords, u: Date.now() });
+  else { t = { id: newId(), name, keywords, u: Date.now() }; data.topics.push(t); }
+  // Das Thema ersetzt die bisherigen Filter
+  filter.topic = t.id; filter.tags.clear(); filter.q = ''; $('#q').value = '';
+  pruned = true; panelMode = 'view'; selected = null;
+  save(); fullUpdate(); scheduleFit(true);
+  toast(`Thema „${name}“ gespeichert`);
+}
+
+function deleteTopic() {
+  const t = topicById(topicDraft.id); if (!t) return;
+  if (!confirm(`Thema „${t.name}“ löschen?\nDeine Kontakte bleiben erhalten.`)) return;
+  data.topics = data.topics.filter(x => x.id !== t.id);
+  data.deleted[t.id] = Date.now();
+  if (filter.topic === t.id) filter.topic = null;
+  panelMode = 'view';
+  save(); fullUpdate(); scheduleFit(true);
+  toast('Thema gelöscht');
+}
+
+/* ---------- Speichern in Datei / Export / Import ---------- */
+function setStatus(msg, warn) {
+  const el = $('#status');
+  if (msg) { el.textContent = msg; el.classList.toggle('warn', !!warn); return; }
+  el.classList.remove('warn');
+  if (!data.updatedAt) { el.textContent = ''; return; }
+  const t = new Date(data.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  el.textContent = fileHandle ? `Gespeichert ${t} · Browser + ${fileHandle.name}` : `Gespeichert ${t} · im Browser`;
+}
+
+async function writeFile() {
+  if (!fileHandle) return;
+  try {
+    if ((await fileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') { setStatus('Speicherdatei getrennt – bitte neu verbinden', true); return; }
+    const w = await fileHandle.createWritable();
+    await w.write(JSON.stringify(data, null, 2)); await w.close();
+    setStatus();
+  } catch (e) { console.warn(e); setStatus('Schreiben in Datei fehlgeschlagen', true); }
+}
+
+// Datei-Handle in IndexedDB merken, damit die Verknüpfung einen Neustart überlebt
+function idb(mode, fn) {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('netzwerk', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onerror = () => rej(r.error);
+    r.onsuccess = () => { const tx = r.result.transaction('kv', mode); const q = fn(tx.objectStore('kv')); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); };
+  });
+}
+
+let pendingHandle = null;
+async function initFileHandle() {
+  if (!window.showSaveFilePicker) { $('#btnFile').hidden = true; return; }
+  try { pendingHandle = await idb('readonly', s => s.get('file')); } catch (e) { return; }
+  if (!pendingHandle) return;
+  if ((await pendingHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { await connectHandle(pendingHandle); return; }
+  $('#btnFile').textContent = `Mit ${pendingHandle.name} verbinden`;
+  $('#btnFile').classList.add('primary');
+}
+
+async function connectHandle(h) {
+  fileHandle = h; pendingHandle = null;
+  $('#btnFile').textContent = h.name; $('#btnFile').classList.remove('primary');
+  $('#btnFile').title = 'Wird bei jeder Änderung automatisch mitgespeichert. Klicken, um eine andere Datei zu wählen.';
+  // Neueren Stand gewinnen lassen
+  try {
+    const text = await (await h.getFile()).text();
+    if (text.trim()) {
+      const fromFile = normalize(JSON.parse(text));
+      if (fromFile.updatedAt > data.updatedAt) { data = fromFile; localStorage.setItem(STORE_KEY, JSON.stringify(data)); fullUpdate(); toast('Neuerer Stand aus Datei geladen'); setStatus(); return; }
+    }
+  } catch (e) { /* leere oder fremde Datei → überschreiben */ }
+  await writeFile(); setStatus();
+}
+
+$('#btnFile').onclick = async () => {
+  try {
+    if (pendingHandle) {
+      if ((await pendingHandle.requestPermission({ mode: 'readwrite' })) === 'granted') return connectHandle(pendingHandle);
+    }
+    const h = await showSaveFilePicker({ suggestedName: 'netzwerk.json', types: [{ description: 'Netzwerk-Daten', accept: { 'application/json': ['.json'] } }] });
+    await idb('readwrite', s => s.put(h, 'file'));
+    await connectHandle(h);
+    toast(`Speichert ab jetzt automatisch in ${h.name}`);
+  } catch (e) { if (e.name !== 'AbortError') toast('Datei konnte nicht verbunden werden'); }
+};
+
+// Export: am Handy über das Teilen-Menü (z. B. LocalSend oder „In Dateien sichern“), sonst als Download
+async function exportData() {
+  const name = `netzwerk-${new Date().toISOString().slice(0, 10)}.json`;
+  const json = JSON.stringify(data, null, 2);
+  if (matchMedia('(pointer: coarse)').matches && navigator.canShare) {
+    const file = new File([json], name, { type: 'application/json' });
+    if (navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); } catch (e) { /* abgebrochen */ }
+      return;
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  a.download = name;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$('#btnExport').onclick = exportData;
+$('#btnImport').onclick = () => $('#importFile').click();
+$('#importFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let d;
+  try { d = normalize(JSON.parse(await f.text())); }
+  catch (err) { alert('Die Datei konnte nicht gelesen werden: ' + err.message); return; }
+  if (!data.people.length && !data.topics.length) return applyImport(d, 'replace');
+  pendingImport = { data: d, name: f.name };
+  panelMode = 'import'; renderPanel();
+};
+
+function renderImport() {
+  $('#panel').classList.add('open');
+  const d = pendingImport.data;
+  const merged = mergeData(data, d);
+  const localIds = new Set(data.people.map(p => p.id)), mergedIds = new Set(merged.people.map(p => p.id));
+  const added = merged.people.filter(p => !localIds.has(p.id)).length;
+  const removed = data.people.filter(p => !mergedIds.has(p.id)).length;
+  const changed = merged.people.filter(p => localIds.has(p.id) && (byId.get(p.id).u || 0) !== p.u).length;
+  const when = d.updatedAt ? new Date(d.updatedAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'unbekannt';
+  $('#panelHead').innerHTML = `<div><h2>Datei importieren</h2><div class="sub">${esc(pendingImport.name)}</div></div><button class="x" title="Abbrechen">×</button>`;
+  $('#panelHead .x').onclick = cancelForm;
+  $('#panelBody').innerHTML = `
+    <div class="field"><div class="k">In der Datei</div><div class="v">${d.people.length} Kontakte · ${d.links.length} Querverbindungen · ${d.topics.length} Themen<br><span style="color:var(--muted)">Stand: ${esc(when)}</span></div></div>
+    <div class="field"><div class="k">Auf diesem Gerät</div><div class="v">${data.people.length} Kontakte · ${data.links.length} Querverbindungen · ${data.topics.length} Themen</div></div>
+    <div class="field"><div class="k">Beim Zusammenführen</div><div class="v">${added} neu · ${changed} aktualisiert · ${removed} gelöscht<br>→ danach ${merged.people.length} Kontakte</div>
+      <div class="note">Pro Kontakt gewinnt die neuere Änderung. Was auf einem Gerät gelöscht wurde, wird auch hier gelöscht.</div></div>`;
+  $('#panelFoot').innerHTML = `<button class="btn primary" id="iMerge">Zusammenführen</button>
+    <button class="btn" id="iReplace">Alles ersetzen</button><button class="btn" id="iCancel">Abbrechen</button>`;
+  $('#iMerge').onclick = () => applyImport(d, 'merge');
+  $('#iReplace').onclick = () => { if (confirm(`Alle ${data.people.length} Kontakte auf diesem Gerät durch die ${d.people.length} aus der Datei ersetzen?`)) applyImport(d, 'replace'); };
+  $('#iCancel').onclick = cancelForm;
+}
+
+function applyImport(d, mode) {
+  data = mode === 'merge' ? mergeData(data, d) : d;
+  pendingImport = null; panelMode = 'view'; selected = null; filter.topic = null; fitted = false;
+  save(); fullUpdate();
+  toast(mode === 'merge' ? `Zusammengeführt – jetzt ${data.people.length} Kontakte` : 'Import erfolgreich');
+}
+
+/* ---------- Menü (Handy) ---------- */
+function renderMenu() {
+  $('#panel').classList.add('open');
+  const t = data.updatedAt ? new Date(data.updatedAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '–';
+  $('#panelHead').innerHTML = `<div><h2>Menü</h2><div class="sub">${data.people.length} Kontakte · ${data.links.length} Querverbindungen · zuletzt geändert ${esc(t)}</div></div><button class="x" title="Schließen">×</button>`;
+  $('#panelHead .x').onclick = cancelForm;
+  $('#panelBody').innerHTML = `
+    <div class="menu-list">
+      <button class="btn" id="mExport">Daten senden / sichern<small>Öffnet das Teilen-Menü – z. B. LocalSend an den Laptop oder „In Dateien sichern“</small></button>
+      <button class="btn" id="mImport">Datei importieren<small>Stand vom Laptop übernehmen – mit Zusammenführen</small></button>
+      <button class="btn" id="mName">Deinen Namen ändern<small>Aktuell: ${esc(data.meName)}</small></button>
+    </div>
+    <label class="field"><div class="k">Darstellung im Netz</div>
+      <select class="addlink" id="mLayout">${[...$('#layout').options].map(o => `<option value="${o.value}" ${o.selected ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select></label>
+    <div class="field"><div class="k">Mit dem Laptop abgleichen</div>
+      <ol class="steps">
+        <li>Hier „Daten senden“ → LocalSend → Laptop wählen.</li>
+        <li>Am Laptop „Import“ → Datei wählen → „Zusammenführen“.</li>
+        <li>Am Laptop „Export“ und die Datei per LocalSend ans iPhone schicken.</li>
+        <li>Hier „Datei importieren“ → „Zusammenführen“.</li>
+      </ol></div>
+    <div class="field"><div class="k">Datenschutz</div><div class="v" style="color:var(--muted);font-size:13px">Alle Daten liegen nur auf diesem Gerät. Die App darf keine Verbindungen ins Internet aufbauen.</div></div>`;
+  $('#panelFoot').innerHTML = `<button class="btn" id="mClose">Schließen</button>`;
+  $('#mClose').onclick = cancelForm;
+  $('#mExport').onclick = exportData;
+  $('#mImport').onclick = () => $('#importFile').click();
+  $('#mName').onclick = () => { selected = 'me'; panelMode = 'edit'; renderPanel(); };
+  $('#mLayout').onchange = e => { $('#layout').value = e.target.value; $('#layout').onchange({ target: $('#layout') }); };
+}
+$('#btnMenu').onclick = () => { panelMode = 'menu'; renderPanel(); };
+
+/* ---------- Sonstiges ---------- */
+$('#btnAdd').onclick = () => openNew(selected || 'me');
+$('#layout').onchange = e => { Graph.dagMode(e.target.value || null); fitted = false; Graph.d3ReheatSimulation(); };
+document.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
+  if (e.key === 'Escape') { if (panelMode !== 'view') cancelForm(); else if (typing) document.activeElement.blur(); else closePanel(); }
+});
+
+function newId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function formatDate(s) { const d = new Date(s + 'T00:00'); return isNaN(d) ? esc(s) : d.toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' }); }
+let toastTimer;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2400); }
+
+function loadDemo() {
+  const P = (id, name, via, role, company, tags, extra = {}) => ({ id, name, via, role, company, tags, phone: '', email: '', reach: '', location: '', strength: 3, lastContact: '', notes: '', ...extra });
+  data.people = [
+    P('d1', 'Lena Hoffmann', 'me', 'Steuerberaterin', 'Hoffmann & Partner', ['Steuern', 'Buchhaltung', 'Gründung'], { phone: '+49 170 1234567', reach: 'Mo–Do, lieber per Mail', location: 'Köln', strength: 4 }),
+    P('d2', 'Jonas Weber', 'me', 'Softwareentwickler', 'Freelancer', ['Webentwicklung', 'IT-Hilfe'], { strength: 5, location: 'Köln', reach: 'Abends, WhatsApp' }),
+    P('d3', 'Mia Schulz', 'me', 'Studienfreundin', '', ['Events', 'Kontakte Uni'], { strength: 4 }),
+    P('d4', 'Tobias Klein', 'me', 'Elektriker', 'Klein Elektro', ['Handwerk', 'Elektrik', 'Smart Home'], { phone: '+49 221 555012', reach: 'Werktags bis 16 Uhr', strength: 2 }),
+    P('d5', 'Sarah Becker', 'd1', 'Anwältin Arbeitsrecht', 'Kanzlei Becker', ['Recht', 'Arbeitsrecht', 'Verträge']),
+    P('d6', 'Markus Wolf', 'd1', 'Business Angel', '', ['Investment', 'Startups', 'Gründung'], { notes: 'Investiert in B2B-SaaS, Ticket 25–100k.' }),
+    P('d7', 'Aylin Demir', 'd2', 'UX-Designerin', 'Studio Nord', ['Design', 'UX', 'Branding']),
+    P('d8', 'Felix Braun', 'd2', 'DevOps', 'CloudCo', ['Server', 'Cloud', 'IT-Hilfe']),
+    P('d9', 'Nina Richter', 'd3', 'Recruiterin', 'TalentHub', ['Jobs', 'Recruiting', 'Bewerbung']),
+    P('d10', 'Paul Krüger', 'd3', 'Fotograf', '', ['Fotografie', 'Events', 'Video']),
+    P('d11', 'Clara Neumann', 'd6', 'Partnerin', 'Rhein Ventures', ['Investment', 'Venture Capital']),
+    P('d12', 'David Lang', 'd9', 'Head of Marketing', 'Brightline', ['Marketing', 'Social Media', 'Jobs']),
+    P('d13', 'Eva Schmitt', 'd4', 'Immobilienmaklerin', 'Schmitt Immobilien', ['Wohnung', 'Immobilien'], { reach: 'Sa vormittags erreichbar' }),
+    P('d14', 'Omar Haddad', 'd12', 'Journalist', 'Stadtanzeiger', ['Presse', 'PR']),
+    P('d15', 'Jan Vogel', 'd13', 'Hausverwalter', 'Vogel Verwaltung', ['Hausverwaltung', 'Mietrecht']),
+    P('d16', 'Lisa Krause', 'd5', 'Notarin', 'Notariat Krause', ['Notar', 'Immobilienkauf', 'Verträge'])
+  ];
+  data.links = [
+    { id: 'l1', a: 'd11', b: 'd2' },   // Clara kennt Jonas
+    { id: 'l2', a: 'd13', b: 'd5' },   // Eva kennt Sarah
+    { id: 'l3', a: 'd8', b: 'd9' },    // Felix kennt Nina
+    { id: 'l4', a: 'd10', b: 'd7' }    // Paul kennt Aylin
+  ];
+  data.topics = [
+    { id: 't1', name: 'Immobilien', keywords: ['Immobilien', 'Wohnung', 'Makler', 'Notar', 'Hausverwaltung', 'Handwerk'] },
+    { id: 't2', name: 'Gründung', keywords: ['Gründung', 'Investment', 'Steuern', 'Recht', 'Venture'] }
+  ];
+  data = normalize(data);
+  save(); fitted = false; fullUpdate(); toast('Beispieldaten geladen – mit „Import“ oder Löschen jederzeit ersetzbar');
+}
+
+/* ---------- Start ---------- */
+fullUpdate();
+setStatus();
+initFileHandle();
+// Als installierte App offline nutzbar machen (nur über https, nicht beim Öffnen als lokale Datei)
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// Browser bitten, die Daten nicht automatisch aufzuräumen
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+</script>
+</body>
+</html>
