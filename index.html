@@ -154,6 +154,20 @@
   .menu-list .btn small { display: block; color: var(--muted); font-size: 12px; white-space: normal; }
   .steps { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
   .steps li { margin-bottom: 4px; }
+  .todo-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 0 6px; border-radius: 999px; background: #3b2f12; color: var(--d0); vertical-align: 1px; }
+  .todo-pill { margin-left: 6px; font-size: 11px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--d0); background: #3b2f12; color: var(--d0); }
+  .todo-switch { display: grid; grid-template-columns: 42px 1fr; gap: 10px; align-items: center; padding: 10px 12px; margin-bottom: 14px;
+    border-radius: var(--radius); background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; }
+  .todo-switch.on { border-color: var(--d0); background: #2a2412; }
+  .todo-switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .todo-switch .track { width: 42px; height: 24px; border-radius: 12px; background: #34405a; position: relative; transition: background .15s; }
+  .todo-switch .knob { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .todo-switch.on .track { background: var(--d0); }
+  .todo-switch.on .knob { left: 21px; }
+  .todo-switch small { display: block; color: var(--muted); font-size: 12px; }
+  label.check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  label.check input { width: auto; }
+  label.check .hintline { width: 100%; }
 
   /* ---------- Handy ---------- */
   @media (max-width: 760px) {
@@ -199,8 +213,8 @@
     </select>
     <button class="btn" id="btnFile" title="Automatisch in eine Datei auf deinem Laptop mitspeichern">Speicherdatei…</button>
     <button class="btn" id="btnExport" title="Backup als JSON-Datei herunterladen">Export</button>
-    <button class="btn" id="btnImport" title="Backup-Datei laden">Import</button>
-    <input type="file" id="importFile" accept=".json,application/json,text/plain" hidden>
+    <button class="btn" id="btnImport" title="Backup-Datei (.json) oder Adressbuch-Export (.vcf) laden">Import</button>
+    <input type="file" id="importFile" accept=".json,application/json,text/plain,.vcf,text/vcard,text/x-vcard" hidden>
     <button class="btn menu-btn" id="btnMenu" aria-label="Menü">⋯</button>
     <button class="btn primary" id="btnAdd">+ Kontakt</button>
   </header>
@@ -269,7 +283,8 @@ let data = loadLocal();
 let fileHandle = null;
 
 // u = Zeitpunkt der letzten Änderung eines Eintrags, deleted = gelöschte Einträge (für das Zusammenführen)
-function emptyData() { return { version: 3, meName: 'Ich', meNameU: 0, updatedAt: 0, people: [], links: [], topics: [], deleted: {} }; }
+// contactKeys = Nummern/Adressen, die schon einmal aus dem Adressbuch übernommen wurden (damit nichts doppelt kommt)
+function emptyData() { return { version: 3, meName: 'Ich', meNameU: 0, updatedAt: 0, people: [], links: [], topics: [], deleted: {}, contactKeys: {} }; }
 
 function loadLocal() {
   try {
@@ -286,13 +301,14 @@ function normalize(d) {
   out.meNameU = +d.meNameU || 0;
   out.updatedAt = d.updatedAt || 0;
   if (d.deleted && typeof d.deleted === 'object') Object.entries(d.deleted).forEach(([k, t]) => { if (+t) out.deleted[k] = +t; });
+  if (d.contactKeys && typeof d.contactKeys === 'object') Object.entries(d.contactKeys).forEach(([k, t]) => { if (+t) out.contactKeys[k] = +t; });
   out.people = d.people.filter(p => p && p.id && p.name).map(p => ({
     id: String(p.id), name: String(p.name), via: p.via ? String(p.via) : 'me',
     role: p.role || '', company: p.company || '',
     tags: Array.isArray(p.tags) ? p.tags.map(String).filter(Boolean) : [],
     phone: p.phone || '', email: p.email || '', reach: p.reach || '', location: p.location || '',
     strength: Math.min(5, Math.max(1, +p.strength || 3)), lastContact: p.lastContact || '', notes: p.notes || '',
-    u: +p.u || 0
+    todo: !!p.todo, u: +p.u || 0
   }));
   const ids = new Set(out.people.map(p => p.id));
   out.people.forEach(p => { if (p.via !== 'me' && !ids.has(p.via)) p.via = 'me'; });
@@ -333,6 +349,8 @@ function mergeData(a, b) {
   const nameSrc = (b.meNameU || 0) > (a.meNameU || 0) ? b : a;
   out.meName = nameSrc.meName; out.meNameU = nameSrc.meNameU || 0;
   out.deleted = del;
+  out.contactKeys = { ...a.contactKeys };
+  Object.entries(b.contactKeys || {}).forEach(([k, t]) => { if (!(out.contactKeys[k] >= t)) out.contactKeys[k] = t; });
   out.updatedAt = Math.max(a.updatedAt || 0, b.updatedAt || 0);
   return normalize(JSON.parse(JSON.stringify(out)));
 }
@@ -388,10 +406,13 @@ function allTags() {
 }
 
 /* ---------- Filter & Themen ---------- */
-const filter = { q: '', tags: new Set(), degrees: new Set(), topic: null };
+const filter = { q: '', tags: new Set(), degrees: new Set(), topic: null, todo: false };
 let pruned = true;   // bei aktivem Filter nur den Treffer-Baum zeigen
 const fold = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const filterActive = () => !!(filter.q.trim() || filter.tags.size || filter.degrees.size || filter.topic);
+const filterActive = () => !!(filter.q.trim() || filter.tags.size || filter.degrees.size || filter.topic || filter.todo);
+// Übernommene, noch nicht bearbeitete Kontakte ohne eigene Verbindungen bleiben aus dem Netz raus, sonst wird es unübersichtlich
+const hiddenTodo = p => p.todo && !(kids.get(p.id) || []).length && !partnersOf(p.id).length;
+const todoCount = () => data.people.filter(p => p.todo).length;
 const showPruned = () => filterActive() && pruned;
 const topicById = id => data.topics.find(t => t.id === id);
 const hayOf = p => fold([p.name, p.role, p.company, p.tags.join(' '), p.notes, p.location, p.reach, p.email, p.phone].join(' '));
@@ -405,6 +426,7 @@ function topicMatches(p, keywords) {
 
 function matches(p) {
   const d = Math.min(3, depthOf.get(p.id));
+  if (filter.todo && !p.todo) return false;
   if (filter.degrees.size && !filter.degrees.has(d)) return false;
   if (filter.tags.size && !p.tags.some(t => filter.tags.has(t.toLowerCase()))) return false;
   if (filter.topic) { const t = topicById(filter.topic); if (t && !topicMatches(p, t.keywords)) return false; }
@@ -544,7 +566,7 @@ let visibleSet = new Set(), graphLinkKeys = new Set(), graphKey = '';
 function visibleIds() {
   return showPruned()
     ? ['me', ...data.people.filter(p => trailSet.has(p.id)).map(p => p.id)]
-    : ['me', ...data.people.map(p => p.id)];
+    : ['me', ...data.people.filter(p => !hiddenTodo(p)).map(p => p.id)];
 }
 
 function rebuildGraph() {
@@ -565,7 +587,7 @@ function rebuildGraph() {
   // Im Treffer-Baum folgen die Linien den kürzesten Wegen (auch über Querverbindungen)
   const links = showPruned()
     ? ids.filter(id => id !== 'me').map(id => { const s = bfsParent.get(id); return { source: s, target: id, cross: !isTreeEdge(s, id) }; })
-    : data.people.map(p => ({ source: p.via, target: p.id, cross: false }));
+    : data.people.filter(p => !hiddenTodo(p)).map(p => ({ source: p.via, target: p.id, cross: false }));
   visibleSet = new Set(ids);
   graphLinkKeys = new Set(links.map(l => edgeKey(l.source, l.target)));
   graphKey = ids.join(',') + '#' + showPruned();
@@ -678,8 +700,9 @@ function fitCamera(nodeFilter = () => true, ms = 700) {
 /* ---------- Sidebar ---------- */
 function renderSidebar() {
   const direct = (kids.get('me') || []).length;
+  const nTodo = todoCount();
   $('#stats').textContent = data.people.length
-    ? `${data.people.length} Kontakte · ${direct} direkt · ${data.links.length} Querverbindungen`
+    ? `${data.people.length} Kontakte · ${direct} direkt · ${data.links.length} Querverbindungen` + (nTodo ? ` · ${nTodo} zu bearbeiten` : '')
     : '';
 
   $('#topicChips').innerHTML = data.topics.length
@@ -705,15 +728,20 @@ function renderSidebar() {
   vt.hidden = !filterActive();
   vt.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.view === 'pruned') === pruned));
 
-  const list = (filterActive() ? data.people.filter(p => matchSet.has(p.id)) : data.people.slice())
-    .sort((a, b) => depthOf.get(a.id) - depthOf.get(b.id) || byName(a, b));
+  const list = (filterActive() ? data.people.filter(p => matchSet.has(p.id)) : data.people.filter(p => !p.todo))
+    .sort(filter.todo ? byName : (a, b) => depthOf.get(a.id) - depthOf.get(b.id) || byName(a, b));
   const topic = filter.topic && topicById(filter.topic);
-  $('#listHead').innerHTML = topic
+  const todoBtn = nTodo && !filter.todo ? ` <button class="todo-pill" id="showTodo">${nTodo} zu bearbeiten</button>` : '';
+  $('#listHead').innerHTML = filter.todo && !topic
+    ? `<b>Zu bearbeiten</b>: ${list.length} Kontakt${list.length === 1 ? '' : 'e'} <button class="linkbtn" id="todoDone">fertig</button>`
+    : (topic
     ? `Thema <b>${esc(topic.name)}</b>: ${list.length} Kontakt${list.length === 1 ? '' : 'e'} <button class="linkbtn" id="editTopic">bearbeiten</button>`
     : filterActive()
       ? `${list.length} von ${data.people.length} gefunden` + (filter.tags.size || filter.q.trim() ? ' <button class="linkbtn" id="saveTopic">als Thema speichern</button>' : '')
-      : `Alle Kontakte (${data.people.length})`;
-  if (filterActive() && list.length) $('#listHead').insertAdjacentHTML('beforeend', ' <button class="linkbtn mobile-only" id="showTree">als Baum zeigen</button>');
+      : `Alle Kontakte (${data.people.length - nTodo})`) + todoBtn;
+  if ($('#showTodo')) $('#showTodo').onclick = () => { filter.todo = true; pruned = true; update(); };
+  if ($('#todoDone')) $('#todoDone').onclick = () => { filter.todo = false; update(); };
+  if (filterActive() && list.length && !filter.todo) $('#listHead').insertAdjacentHTML('beforeend', ' <button class="linkbtn mobile-only" id="showTree">als Baum zeigen</button>');
   if ($('#showTree')) $('#showTree').onclick = () => setTab('graph');
   if ($('#editTopic')) $('#editTopic').onclick = () => openTopic(filter.topic);
   if ($('#saveTopic')) $('#saveTopic').onclick = () => {
@@ -732,9 +760,9 @@ function renderSidebar() {
     const sub = [p.role, p.company].filter(Boolean).join(' · ');
     const mids = bestPath(p.id).slice(1, -1).map(nameOf);
     return `<div class="item ${p.id === selected ? 'sel' : ''}" data-id="${esc(p.id)}">
-      <span class="dot" style="background:${colorOf(p.id)}"></span>
-      <div style="min-width:0"><div class="name">${esc(p.name)}</div>
-      ${sub ? `<div class="sub">${esc(sub)}</div>` : ''}
+      <span class="dot" style="background:${p.todo ? 'transparent;border:2px solid var(--muted)' : colorOf(p.id)}"></span>
+      <div style="min-width:0"><div class="name">${esc(p.name)}${p.todo ? ' <span class="todo-tag">offen</span>' : ''}</div>
+      ${sub ? `<div class="sub">${esc(sub)}</div>` : p.todo && p.phone ? `<div class="sub">${esc(p.phone)}</div>` : ''}
       ${p.tags.length ? `<div class="tags">${esc(p.tags.join(' · '))}</div>` : ''}
       ${mids.length ? `<div class="route">über ${esc(mids.join(' → '))}</div>` : ''}</div></div>`;
   }).join('') : '<div class="empty">Niemand passt zu diesen Filtern.</div>';
@@ -749,7 +777,7 @@ $('#topicChips').onclick = e => {
 $('#addTopic').onclick = () => openTopic(null);
 $('#degreeChips').onclick = e => { const b = e.target.closest('[data-deg]'); if (!b) return; toggle(filter.degrees, +b.dataset.deg); update(); };
 $('#tagChips').onclick = e => { const b = e.target.closest('[data-tag]'); if (!b) return; toggle(filter.tags, b.dataset.tag); update(); };
-$('#clearFilters').onclick = () => { filter.q = ''; $('#q').value = ''; filter.tags.clear(); filter.degrees.clear(); filter.topic = null; update(); };
+$('#clearFilters').onclick = () => { filter.q = ''; $('#q').value = ''; filter.tags.clear(); filter.degrees.clear(); filter.topic = null; filter.todo = false; update(); };
 $('#viewToggle').onclick = e => { const b = e.target.closest('[data-view]'); if (!b) return; pruned = b.dataset.view === 'pruned'; update(); };
 $('#q').oninput = e => { filter.q = e.target.value; update(); };
 $('#q').onkeydown = e => { if (e.key === 'Enter') { const first = $('#list .item'); if (first) select(first.dataset.id, true); } };
@@ -791,6 +819,7 @@ function renderPanel() {
   if (panelMode === 'topic') return renderTopicForm();
   if (panelMode === 'menu') return renderMenu();
   if (panelMode === 'import') return renderImport();
+  if (panelMode === 'contacts') return renderContactImport();
   if (!selected || (selected !== 'me' && !byId.has(selected))) { selected = null; panel.classList.remove('open'); return; }
   // Handy: Detailansicht wurde für „Im Netz zeigen“ weggeklappt, Auswahl bleibt aber markiert
   if (sheetDismissed && panelMode === 'view' && isMobile()) { panel.classList.remove('open'); return; }
@@ -809,6 +838,9 @@ function renderPanel() {
   const children = kids.get(selected) || [];
   let html = '';
   if (!isMe) {
+    html += `<label class="todo-switch ${p.todo ? 'on' : ''}"><input type="checkbox" id="todoToggle" ${p.todo ? 'checked' : ''}>
+      <span class="track"><span class="knob"></span></span>
+      <span><b>${p.todo ? 'Noch zu bearbeiten' : 'Fertig eingetragen'}</b><small>${p.todo ? 'Aus dem Adressbuch übernommen. Trag ein, wofür nützlich und über wen du die Person kennst.' : 'Wieder auf „zu bearbeiten“ setzen'}</small></span></label>`;
     const best = bestPath(selected), tree = pathTo(selected);
     const differs = best.join() !== tree.join();
     html += `<div class="field"><div class="k">So kommst du hin</div>${pathHtml(best)}
@@ -837,6 +869,7 @@ function renderPanel() {
   }
   $('#panelBody').innerHTML = html;
   if ($('#linkSel')) $('#linkSel').onchange = e => addLink(selected, e.target.value);
+  if ($('#todoToggle')) $('#todoToggle').onchange = e => setTodo(selected, e.target.checked);
 
   $('#panelFoot').innerHTML = `<button class="btn primary" id="pAdd">+ Kontakt über ${esc(isMe ? 'mich' : firstName(selected))}</button>
     <button class="btn" id="pEdit">${isMe ? 'Namen ändern' : 'Bearbeiten'}</button>
@@ -869,6 +902,24 @@ $('#panelBody').addEventListener('click', e => {
   const cp = e.target.closest('[data-copy]');
   if (cp) navigator.clipboard.writeText(cp.dataset.copy).then(() => toast('Kopiert'), () => toast('Kopieren nicht möglich'));
 });
+
+// Schalter „zu bearbeiten“. In der Bearbeiten-Liste geht es danach direkt mit dem nächsten Kontakt weiter.
+function setTodo(id, on) {
+  const p = byId.get(id); if (!p) return;
+  const queue = filter.todo ? data.people.filter(x => x.todo && matchSet.has(x.id)).sort(byName) : [];
+  const pos = queue.findIndex(x => x.id === id);
+  p.todo = on; p.u = Date.now();
+  save(); index(); computeMatches();
+  if (!on && filter.todo) {
+    const next = queue.slice(pos + 1).concat(queue.slice(0, pos)).find(x => x.todo);
+    update();
+    if (next) { select(next.id, false); toast(`Erledigt – weiter mit ${next.name}`); }
+    else { filter.todo = false; selected = id; update(); renderPanel(); toast('Alle Kontakte bearbeitet 🎉'); }
+    return;
+  }
+  update(); renderPanel();
+  toast(on ? 'Auf „zu bearbeiten“ gesetzt' : 'Als fertig markiert');
+}
 
 /* ---------- Querverbindungen ---------- */
 function addLink(a, b) {
@@ -905,6 +956,7 @@ function renderForm(id) {
         .map(([c, d]) => `<option value="${esc(c.id)}" ${c.id === parent ? 'selected' : ''}>${'  '.repeat(d)}${esc(c.name)}</option>`));
     const tagList = allTags().map(([, e]) => `<option value="${esc(e.label)}">`).join('');
     $('#panelBody').innerHTML = `<form class="edit" id="f" autocomplete="off">
+      ${p && p.todo ? `<label class="check"><input type="checkbox" name="todo" ${p.todo ? 'checked' : ''}> Noch zu bearbeiten <span class="hintline">Haken raus, wenn du fertig bist</span></label>` : ''}
       <label>Name *<input name="name" required value="${v('name')}"></label>
       <label>Kenne ich über<select name="via">${opts.join('')}</select></label>
       <div class="row2"><label>Beruf / Rolle<input name="role" value="${v('role')}"></label>
@@ -939,9 +991,12 @@ function submitForm(id, fd) {
     tags: parseList(fd.get('tags')),
     phone: fd.get('phone').trim(), email: fd.get('email').trim(), reach: fd.get('reach').trim(),
     location: fd.get('location').trim(), strength: +fd.get('strength') || 3,
-    lastContact: fd.get('lastContact'), notes: fd.get('notes').trim(), u: Date.now()
+    lastContact: fd.get('lastContact'), notes: fd.get('notes').trim(), todo: fd.get('todo') === 'on', u: Date.now()
   };
   let targetId = id;
+  // Haken bei „zu bearbeiten“ entfernt: wie der Schalter behandeln (geht in der Liste zum nächsten weiter)
+  const finishing = id && byId.get(id).todo && !rec.todo;
+  if (finishing) rec.todo = true;
   if (id) Object.assign(byId.get(id), rec);
   else { targetId = newId(); data.people.push({ id: targetId, ...rec }); }
   // Eine Querverbindung, die jetzt der eingetragene Weg ist, wird überflüssig
@@ -952,6 +1007,7 @@ function submitForm(id, fd) {
   }
   panelMode = 'view'; selected = targetId;
   save(); fullUpdate();
+  if (finishing) return setTodo(id, false);
   toast(id ? 'Gespeichert' : `${name} hinzugefügt`);
   flyWhenSettled(targetId);
 }
@@ -1125,8 +1181,10 @@ $('#btnExport').onclick = exportData;
 $('#btnImport').onclick = () => $('#importFile').click();
 $('#importFile').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const text = await f.text();
+  if (/^\s*BEGIN:VCARD/i.test(text) || /\.vcf$/i.test(f.name)) return openContactImport(text, f.name);
   let d;
-  try { d = normalize(JSON.parse(await f.text())); }
+  try { d = normalize(JSON.parse(text)); }
   catch (err) { alert('Die Datei konnte nicht gelesen werden: ' + err.message); return; }
   if (!data.people.length && !data.topics.length) return applyImport(d, 'replace');
   pendingImport = { data: d, name: f.name };
@@ -1163,6 +1221,110 @@ function applyImport(d, mode) {
   toast(mode === 'merge' ? `Zusammengeführt – jetzt ${data.people.length} Kontakte` : 'Import erfolgreich');
 }
 
+/* ---------- Kontakte aus dem Adressbuch (vCard / .vcf) ---------- */
+// Liest eine .vcf-Datei, wie sie die iPhone-Kontakte-App, Outlook oder Google exportieren
+function parseVcf(text) {
+  const lines = [];
+  for (const l of text.replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '').split('\n')) {
+    const prev = lines[lines.length - 1];
+    // Alte Exporte (quoted-printable) brechen Zeilen mit „=“ am Ende um
+    if (prev && /QUOTED-PRINTABLE/i.test(prev.split(':')[0]) && prev.endsWith('=')) lines[lines.length - 1] = prev.slice(0, -1) + l;
+    else lines.push(l);
+  }
+  const unesc = s => s.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim();
+  const qp = s => { try { return decodeURIComponent(s.replace(/%/g, '%25').replace(/=([0-9A-F]{2})/gi, '%$1')); } catch (e) { return s; } };
+  const cards = []; let c = null;
+  for (const line of lines) {
+    if (/^BEGIN:VCARD/i.test(line)) { c = { tel: [], email: [] }; continue; }
+    if (/^END:VCARD/i.test(line)) { if (c) cards.push(c); c = null; continue; }
+    if (!c) continue;
+    const i = line.indexOf(':'); if (i < 0) continue;
+    const head = line.slice(0, i), params = head.split(';'), prop = params[0].replace(/^[^.]*\./, '').toUpperCase();
+    let val = line.slice(i + 1);
+    if (/ENCODING=QUOTED-PRINTABLE/i.test(head)) val = qp(val);
+    const type = head.toUpperCase();
+    if (prop === 'FN') c.fn = unesc(val);
+    else if (prop === 'N') { const [fam, giv, mid] = val.split(';').map(unesc); c.n = [giv, mid, fam].filter(Boolean).join(' '); }
+    else if (prop === 'TEL' && val.trim()) c.tel.push({ v: unesc(val.replace(/^tel:/i, '')), mobile: /CELL|IPHONE|MOBILE/.test(type) });
+    else if (prop === 'EMAIL' && val.trim()) c.email.push(unesc(val));
+    else if (prop === 'ORG') c.org = val.split(';').map(unesc).filter(Boolean).join(', ');
+    else if (prop === 'TITLE') c.title = unesc(val);
+    else if (prop === 'NOTE') c.note = unesc(val);
+    else if (prop === 'ADR' && !c.city) c.city = unesc(val.split(';')[3] || '');
+  }
+  return cards.map(c => {
+    c.tel.sort((a, b) => b.mobile - a.mobile);
+    const tels = c.tel.map(t => t.v);
+    const name = c.fn || c.n || c.org || tels[0] || c.email[0] || '';
+    return { name, tels, emails: c.email, org: c.org || '', title: c.title || '', note: c.note || '', city: c.city || '' };
+  }).filter(c => c.name);
+}
+
+// Nummern vergleichbar machen: 0171 12 34 = +49 171 1234 (deutsche Nummern ohne Vorwahl gelten als +49)
+function phoneKey(s) {
+  let d = String(s || '').replace(/[^\d+]/g, '');
+  if (d.startsWith('00')) d = '+' + d.slice(2);
+  else if (d.startsWith('0')) d = '+49' + d.slice(1);
+  return d.replace(/\D/g, '').length >= 5 ? 'tel:' + d : '';
+}
+const mailKey = s => s && s.includes('@') ? 'mail:' + s.trim().toLowerCase() : '';
+const nameKey = s => 'name:' + fold(s).replace(/\s+/g, ' ').trim();
+function keysOfCard(c) { const k = [...c.tels.map(phoneKey), ...c.emails.map(mailKey)].filter(Boolean); return k.length ? k : [nameKey(c.name)]; }
+
+let pendingContacts = null;
+function openContactImport(text, fileName) {
+  const cards = parseVcf(text);
+  if (!cards.length) { alert('In der Datei wurden keine Kontakte gefunden.'); return; }
+  // Was ist schon bekannt? Nummern/Mails der vorhandenen Personen + alles, was früher schon übernommen wurde
+  const known = new Map();
+  data.people.forEach(p => [phoneKey(p.phone), mailKey(p.email), nameKey(p.name)].filter(Boolean).forEach(k => known.set(k, p)));
+  const fresh = [], existing = [], fill = [], seen = new Set();
+  cards.forEach(c => {
+    const keys = keysOfCard(c);
+    if (keys.some(k => seen.has(k))) { existing.push(c); return; }   // doppelt in der Datei selbst
+    keys.forEach(k => seen.add(k));
+    const person = keys.map(k => known.get(k)).find(Boolean) || known.get(nameKey(c.name));
+    if (person) { existing.push(c); if (!person.phone && c.tels.length) fill.push([person, c]); }
+    else if (keys.some(k => data.contactKeys[k])) existing.push(c);   // früher übernommen und danach gelöscht
+    else fresh.push(c);
+  });
+  pendingContacts = { cards, fresh, existing, fill, fileName };
+  panelMode = 'contacts'; renderPanel();
+}
+
+function renderContactImport() {
+  $('#panel').classList.add('open');
+  const { cards, fresh, existing, fill, fileName } = pendingContacts;
+  $('#panelHead').innerHTML = `<div><h2>Kontakte übernehmen</h2><div class="sub">${esc(fileName)}</div></div><button class="x" title="Abbrechen">×</button>`;
+  $('#panelHead .x').onclick = () => { pendingContacts = null; cancelForm(); };
+  const preview = fresh.slice(0, 30).map(c => `<li>${esc(c.name)}${c.tels[0] ? ` <span style="color:var(--muted)">${esc(c.tels[0])}</span>` : ''}</li>`).join('');
+  $('#panelBody').innerHTML = `
+    <div class="field"><div class="k">In der Datei</div><div class="v">${cards.length} Kontakte</div></div>
+    <div class="field"><div class="k">Neu</div><div class="v"><b>${fresh.length}</b> Kontakte kommen dazu – als <span class="todo-tag">offen</span> markiert, direkt unter dir</div>
+      ${fresh.length ? `<ul class="steps" style="margin-top:6px">${preview}${fresh.length > 30 ? `<li>… und ${fresh.length - 30} weitere</li>` : ''}</ul>` : ''}</div>
+    <div class="field"><div class="k">Schon da</div><div class="v">${existing.length} Kontakte werden übersprungen${fill.length ? ` · bei ${fill.length} wird die fehlende Nummer ergänzt` : ''}</div>
+      <div class="note">Erkannt an Telefonnummer, E-Mail oder Name. Wen du mal gelöscht hast, holt die App auch nicht wieder rein.</div></div>`;
+  $('#panelFoot').innerHTML = `<button class="btn primary" id="cApply" ${fresh.length || fill.length ? '' : 'disabled'}>${fresh.length ? `${fresh.length} übernehmen` : 'Nummern ergänzen'}</button><button class="btn" id="cCancel">Abbrechen</button>`;
+  $('#cCancel').onclick = () => { pendingContacts = null; cancelForm(); };
+  $('#cApply').onclick = applyContactImport;
+}
+
+function applyContactImport() {
+  const { cards, fresh, fill } = pendingContacts, now = Date.now();
+  fresh.forEach(c => {
+    const notes = [c.tels.length > 1 ? 'Weitere Nummern: ' + c.tels.slice(1).join(', ') : '', c.emails.length > 1 ? 'Weitere E-Mails: ' + c.emails.slice(1).join(', ') : '', c.note].filter(Boolean).join('\n');
+    data.people.push({ id: newId(), name: c.name, via: 'me', role: c.title, company: c.org, tags: [], phone: c.tels[0] || '', email: c.emails[0] || '',
+      reach: '', location: c.city, strength: 3, lastContact: '', notes, todo: true, u: now });
+  });
+  fill.forEach(([p, c]) => { p.phone = c.tels[0]; p.u = now; });
+  cards.forEach(c => keysOfCard(c).forEach(k => data.contactKeys[k] = now));
+  const n = fresh.length;
+  pendingContacts = null; panelMode = 'view'; selected = null;
+  if (n) { filter.todo = true; pruned = true; }
+  save(); fullUpdate(); if (isMobile()) setTab('list');
+  toast(n ? `${n} ${n === 1 ? 'Kontakt' : 'Kontakte'} übernommen – jetzt nach und nach bearbeiten` : 'Nummern ergänzt');
+}
+
 /* ---------- Menü (Handy) ---------- */
 function renderMenu() {
   $('#panel').classList.add('open');
@@ -1173,8 +1335,16 @@ function renderMenu() {
     <div class="menu-list">
       <button class="btn" id="mExport">Daten senden / sichern<small>Öffnet das Teilen-Menü – z. B. LocalSend an den Laptop oder „In Dateien sichern“</small></button>
       <button class="btn" id="mImport">Datei importieren<small>Stand vom Laptop übernehmen – mit Zusammenführen</small></button>
+      <button class="btn" id="mContacts">Kontakte aus dem Adressbuch holen<small>Neue Nummern übernehmen – was schon drin ist, wird übersprungen</small></button>
       <button class="btn" id="mName">Deinen Namen ändern<small>Aktuell: ${esc(data.meName)}</small></button>
     </div>
+    <div class="field"><div class="k">Adressbuch übernehmen</div>
+      <ol class="steps">
+        <li>In der Kontakte-App oben links auf „Listen“ tippen.</li>
+        <li>„Alle Kontakte“ lange gedrückt halten → „Exportieren“ → „In Dateien sichern“.</li>
+        <li>Hier „Kontakte aus dem Adressbuch holen“ → die gesicherte .vcf-Datei wählen.</li>
+        <li>Später einfach wiederholen: Es kommen nur die neuen Nummern dazu.</li>
+      </ol></div>
     <label class="field"><div class="k">Darstellung im Netz</div>
       <select class="addlink" id="mLayout">${[...$('#layout').options].map(o => `<option value="${o.value}" ${o.selected ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select></label>
     <div class="field"><div class="k">Mit dem Laptop abgleichen</div>
@@ -1189,6 +1359,7 @@ function renderMenu() {
   $('#mClose').onclick = cancelForm;
   $('#mExport').onclick = exportData;
   $('#mImport').onclick = () => $('#importFile').click();
+  $('#mContacts').onclick = () => $('#importFile').click();
   $('#mName').onclick = () => { selected = 'me'; panelMode = 'edit'; renderPanel(); };
   $('#mLayout').onchange = e => { $('#layout').value = e.target.value; $('#layout').onchange({ target: $('#layout') }); };
 }
