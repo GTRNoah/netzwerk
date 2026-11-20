@@ -1,6 +1,6 @@
 // Offline-Speicher für die App-Dateien. Enthält keine Kontaktdaten – die liegen nur im Speicher des Geräts.
 // Bei jeder neuen Version die Nummer erhöhen, damit Handys das Update laden.
-const CACHE = 'netzwerk-v4';
+const CACHE = 'netzwerk-v5';
 const FILES = ['./', 'index.html', 'lib/graph-libs.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

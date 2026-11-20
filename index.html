@@ -100,6 +100,10 @@
   .viewtoggle[hidden] { display: none; }
   .viewtoggle button { background: none; border: 0; padding: 5px 11px; font-size: 12px; color: var(--muted); }
   .viewtoggle button.on { background: var(--panel-2); color: var(--text); }
+  .graphbtns { position: absolute; right: 14px; bottom: 12px; display: flex; gap: 6px; z-index: 2; }
+  .graphbtns button { background: rgba(18,24,38,.92); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; font-size: 12px; color: var(--muted); }
+  .graphbtns button.on { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 760px) { .graphbtns { bottom: auto; top: 52px; } }
   .scene-tooltip { font: 12px/1.4 "Segoe UI", sans-serif !important; }
   .tip { background: rgba(18,24,38,.95); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; color: var(--text); }
   .tip small { color: var(--muted); }
@@ -254,6 +258,10 @@
       <span><i class="dash"></i>Kennen sich auch</span>
     </div>
     <div class="hint">Ziehen = drehen · Rechtsklick ziehen = verschieben · Mausrad = zoomen</div>
+    <div class="graphbtns">
+      <button id="btnSpin" title="Netz langsam drehen lassen">↻ Drehen</button>
+      <button id="btnFit" title="Alles ins Bild holen">⤢ Alles zeigen</button>
+    </div>
     </div>
 
     <section class="panel" id="panel">
@@ -470,10 +478,11 @@ document.querySelector('#tabs').onclick = e => { const b = e.target.closest('[da
 /* ---------- 3D-Graph ---------- */
 const nodeCache = new Map();
 const graphEl = $('#graph');
-const Graph = ForceGraph3D()(graphEl)
+// Orbit-Steuerung: drehen ohne dass das Bild kippt, Zoom per Mausrad / zwei Finger
+const Graph = ForceGraph3D({ controlType: 'orbit' })(graphEl)
   .backgroundColor('#0a0e18')
   .showNavInfo(false)
-  .dagMode('radialout')
+  .dagMode(null)
   .dagLevelDistance(70)
   .onDagError(() => {})
   // Anordnung nach Rechenschritten beenden, nicht nach Zeit – so wird sie auch auf langsamen Geräten fertig
@@ -495,11 +504,108 @@ const Graph = ForceGraph3D()(graphEl)
   .onBackgroundClick(() => closePanel());
 
 Graph.d3Force('charge').strength(-90);
+const controls = Graph.controls();
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.rotateSpeed = 0.7; controls.autoRotateSpeed = 0.8;
 let fitted = false, fitOnStop = false, engineTicks = 0;
-Graph.onEngineTick(() => engineTicks++);
+Graph.onEngineTick(() => { engineTicks++; stepTween(); });
+
+/* ---------- Feste 3D-Anordnung ----------
+   Statt einer Physik-Simulation (die zittert und Punkte übereinanderschiebt) bekommt jeder Kontakt einen
+   festen Platz: Ich in der Mitte, direkte Kontakte gleichmäßig auf einer Kugel drumherum, deren Kontakte
+   in einem Kegel weiter außen hinter ihnen – und so weiter. */
+const LEVEL = 65;
+let layoutMode = 'radial';   // radial | td | free
+const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+function fibSphere(n) {
+  if (n === 1) return [new THREE.Vector3(0, 0, 1)];
+  return Array.from({ length: n }, (_, i) => {
+    const y = 1 - 2 * (i + 0.5) / n, r = Math.sqrt(1 - y * y), a = i * GOLDEN;
+    return new THREE.Vector3(r * Math.cos(a), y, r * Math.sin(a));
+  });
+}
+// Wenige direkte Kontakte: als Stern zur Kamera hin auffächern (sonst stehen zwei Äste genau hintereinander)
+const VIEW0 = new THREE.Vector3(0.45, 0.35, 1).normalize();
+function fanDirs(n) {
+  const a = new THREE.Vector3(0, 1, 0).addScaledVector(VIEW0, -VIEW0.y).normalize(), b = new THREE.Vector3().crossVectors(a, VIEW0);
+  return Array.from({ length: n }, (_, i) => {
+    const t = Math.PI / 2 + i * 2 * Math.PI / n + (n === 2 ? 0.5 : 0);
+    return a.clone().multiplyScalar(Math.sin(t)).addScaledVector(b, Math.cos(t)).addScaledVector(VIEW0, i % 2 ? 0.3 : -0.3).normalize();
+  });
+}
+function fibCap(dir, angle, n, depth = 1) {
+  if (n === 1) {
+    // Einzelnes Kind leicht seitlich versetzt, damit Ketten nicht zu einer geraden Linie werden
+    const side = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize();
+    return [dir.clone().applyAxisAngle(side, depth % 2 ? 0.35 : -0.35)];
+  }
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  const minCos = Math.cos(angle);
+  return Array.from({ length: n }, (_, i) => {
+    const cz = 1 - (i + 0.5) / n * (1 - minCos), s = Math.sqrt(1 - cz * cz), a = i * GOLDEN;
+    return new THREE.Vector3(s * Math.cos(a), s * Math.sin(a), cz).applyQuaternion(q).normalize();
+  });
+}
+function radialLayout(ids, parentOf) {
+  const childMap = new Map(), size = new Map();
+  ids.forEach(id => { if (id === 'me') return; const p = parentOf(id); if (!childMap.has(p)) childMap.set(p, []); childMap.get(p).push(id); });
+  const calc = id => { let s = 1; (childMap.get(id) || []).forEach(c => s += calc(c)); size.set(id, s); return s; };
+  calc('me');
+  const pos = new Map([['me', new THREE.Vector3()]]);
+  const place = (id, dir, cone, depth) => {
+    const ch = (childMap.get(id) || []).sort((a, b) => size.get(b) - size.get(a) || nameOf(a).localeCompare(nameOf(b), 'de'));
+    if (!ch.length) return;
+    // Platz je nach Anzahl: wenige Kontakte bekommen viel Raum, viele werden enger, aber nie aufeinander
+    const dirs = id === 'me' ? (ch.length <= 6 ? fanDirs(ch.length) : fibSphere(ch.length)) : fibCap(dir, cone * 0.8, ch.length, depth);
+    const childCone = id === 'me' ? Math.min(1.1, Math.sqrt(Math.PI / ch.length)) : Math.max(0.12, cone / Math.sqrt(ch.length + 1));
+    // Große Teilbäume nicht alle nebeneinander, sondern über die ganze Kugel verstreut
+    const slot = [], used = new Set();
+    ch.forEach((c, i) => { let k = Math.floor(((i * 0.6180339887) % 1) * ch.length); while (used.has(k)) k = (k + 1) % ch.length; used.add(k); slot.push(k); });
+    ch.forEach((c, i) => {
+      const d = dirs[slot[i]];
+      // Bei vielen Geschwistern abwechselnd etwas weiter außen, damit Beschriftungen sich nicht decken
+      const stagger = ch.length > 8 ? (i % 2) * 0.35 * LEVEL : 0;
+      pos.set(c, d.clone().multiplyScalar((depth + 1) * LEVEL + stagger));
+      place(c, d, childCone, depth + 1);
+    });
+  };
+  place('me', null, Math.PI, 0);
+  return pos;
+}
+
+// Weiches Gleiten an die neuen Plätze, gezählt in Rechenschritten (läuft so auch auf langsamen Handys zu Ende)
+let tweenT = 1;
+function stepTween() {
+  // Freie Anordnung: Ich bleibt trotzdem fest in der Mitte (die Bibliothek setzt das beim Umschalten zurück)
+  if (layoutMode === 'free') { const me = nodeCache.get('me'); if (me) { me.fx = me.fy = me.fz = 0; } }
+  if (tweenT >= 1) return;
+  tweenT = Math.min(1, tweenT + 1 / 35);
+  const e = 1 - Math.pow(1 - tweenT, 3);
+  Graph.graphData().nodes.forEach(n => {
+    if (!n.__to) return;
+    const f = n.__from || n.__to;
+    ['x', 'y', 'z'].forEach(k => { n[k] = n['f' + k] = f[k] + (n.__to[k] - f[k]) * e; });
+  });
+}
+function applyLayout(nodes, ids) {
+  if (layoutMode !== 'radial') {
+    nodes.forEach(n => { delete n.__to; delete n.__from; n.fx = n.fy = n.fz = undefined; });
+    const me = nodes.find(n => n.id === 'me'); if (me) { me.fx = me.fy = me.fz = 0; }   // Ich bleibt in der Mitte
+    tweenT = 1; return;
+  }
+  const pos = radialLayout(ids, showPruned() ? id => bfsParent.get(id) : id => byId.get(id).via);
+  nodes.forEach(n => {
+    const t = pos.get(n.id) || new THREE.Vector3();
+    n.__from = n.x !== undefined ? new THREE.Vector3(n.x, n.y, n.z) : t.clone();
+    n.__to = t;
+    n.fx = n.__from.x; n.fy = n.__from.y; n.fz = n.__from.z;
+  });
+  tweenT = 0;
+}
+const targetPos = n => n.__to || (n.x !== undefined ? new THREE.Vector3(n.x, n.y, n.z) : null);
 Graph.onEngineStop(() => {
   if (!graphEl.clientWidth) return; // 3D-Bild gerade versteckt (Handy, Tab „Kontakte“)
-  if (!fitted) { fitted = true; fitCamera(); }
+  if (!fitted) { fitCamera(); fitted = true; }
   else if (fitOnStop) { fitOnStop = false; fitView(); }
 });
 new ResizeObserver(() => Graph.width(graphEl.clientWidth).height(graphEl.clientHeight)).observe(graphEl);
@@ -591,6 +697,8 @@ function rebuildGraph() {
   visibleSet = new Set(ids);
   graphLinkKeys = new Set(links.map(l => edgeKey(l.source, l.target)));
   graphKey = ids.join(',') + '#' + showPruned();
+  applyLayout(nodes, ids);
+  Graph.cooldownTicks(layoutMode === 'radial' ? 45 : 250);
   Graph.graphData({ nodes, links });
   Graph.nodeThreeObject(makeNodeObject); // Beschriftungen/Farben neu aufbauen
   refreshGraphStyle();
@@ -668,32 +776,20 @@ function fitView() {
   fitCamera(n => !active || showPruned() || n.id === 'me' || matchSet.has(n.id));
 }
 
-// Alles ins Bild holen: von der Seite schauen, auf der das Netz am flachsten ist (sonst sieht man
-// einen Baum, der zufällig in Blickrichtung gewachsen ist, nur als Punkt), und das Bild so drehen,
-// dass die längste Ausdehnung zur Bildschirmform passt (Handy hochkant, Laptop quer).
+// Alles ins Bild holen, aus der aktuellen Blickrichtung (das Netz ist rund, gedreht wird von Hand)
 function fitCamera(nodeFilter = () => true, ms = 700) {
-  const ns = Graph.graphData().nodes.filter(n => n.x !== undefined && nodeFilter(n));
-  if (!ns.length || !graphEl.clientWidth) return;
-  const pts = ns.map(n => new THREE.Vector3(n.x, n.y, n.z));
-  const box = new THREE.Box3().setFromPoints(pts), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-  const ext = [size.x, size.y, size.z], axis = ext.indexOf(Math.min(...ext));
-  const view = new THREE.Vector3().setComponent(axis, 1);
-  const [ia, ib] = [0, 1, 2].filter(i => i !== axis);
-  const u = new THREE.Vector3().setComponent(ia, 1), v = new THREE.Vector3().setComponent(ib, 1);
-  // Hauptrichtung in der Bildebene (2D-Hauptkomponente)
-  let su = 0, sv = 0, suv = 0;
-  pts.forEach(p => { const a = p.getComponent(ia) - c.getComponent(ia), b = p.getComponent(ib) - c.getComponent(ib); su += a * a; sv += b * b; suv += a * b; });
-  const th = 0.5 * Math.atan2(2 * suv, su - sv);
-  const main = u.clone().multiplyScalar(Math.cos(th)).addScaledVector(v, Math.sin(th));
-  const side = u.clone().multiplyScalar(-Math.sin(th)).addScaledVector(v, Math.cos(th));
+  const pts = Graph.graphData().nodes.filter(n => targetPos(n) && nodeFilter(n)).map(targetPos);
+  if (!pts.length || !graphEl.clientWidth) return;
   const cam = Graph.camera();
-  const up = cam.aspect < 1 ? main : side, across = cam.aspect < 1 ? side : main;
-  if (up.y < 0 || (up.y === 0 && up.z < 0)) up.negate();
-  const span = dir => { let lo = Infinity, hi = -Infinity; pts.forEach(p => { const d = p.clone().sub(c).dot(dir); lo = Math.min(lo, d); hi = Math.max(hi, d); }); return hi - lo + 40; };
+  const c = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3());
+  const R = Math.max(30, ...pts.map(p => p.distanceTo(c))) + 18;
   const vfov = cam.fov * Math.PI / 180, hfov = 2 * Math.atan(Math.tan(vfov / 2) * cam.aspect);
-  const dist = Math.max(120, Math.max(span(across) / 2 / Math.tan(hfov / 2), span(up) / 2 / Math.tan(vfov / 2)) * 1.22 + ext[axis] / 2);
-  cam.up.copy(up);
-  const pos = c.clone().addScaledVector(view, dist);
+  const dist = Math.max(110, R / Math.sin(Math.min(vfov, hfov) / 2));
+  const dir = fitted ? cam.position.clone().sub(controls.target) : new THREE.Vector3(0.45, 0.35, 1);
+  if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+  dir.normalize();
+  cam.up.set(0, 1, 0);
+  const pos = c.clone().addScaledVector(dir, dist);
   Graph.cameraPosition({ x: pos.x, y: pos.y, z: pos.z }, { x: c.x, y: c.y, z: c.z }, ms);
 }
 
@@ -1367,7 +1463,17 @@ $('#btnMenu').onclick = () => { panelMode = 'menu'; renderPanel(); };
 
 /* ---------- Sonstiges ---------- */
 $('#btnAdd').onclick = () => openNew(selected || 'me');
-$('#layout').onchange = e => { Graph.dagMode(e.target.value || null); fitted = false; Graph.d3ReheatSimulation(); };
+// Drehen lassen: hört auf, sobald man selbst anfasst
+function setSpin(on) { controls.autoRotate = on; $('#btnSpin').classList.toggle('on', on); }
+$('#btnSpin').onclick = () => setSpin(!controls.autoRotate);
+$('#btnFit').onclick = () => { setSpin(false); const s = selected; selected = null; fitView(); selected = s; };
+controls.addEventListener('start', () => { if (controls.autoRotate) setSpin(false); });
+$('#layout').onchange = e => {
+  const v = e.target.value;
+  layoutMode = v === 'radialout' ? 'radial' : v === 'td' ? 'td' : 'free';
+  Graph.dagMode(layoutMode === 'td' ? 'td' : null);
+  fitted = false; graphKey = ''; rebuildGraph(); Graph.d3ReheatSimulation();
+};
 document.addEventListener('keydown', e => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
   if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
